@@ -1,0 +1,463 @@
+# OPENINDIANA 2026.10, THE TEXT INSTALLER, DRIVEN TO AN INSTALLED DISK.
+#
+# THIS INSTALLER IS A TUI, NOT A GRAPHICAL ONE, AND IT IS DRIVEN THE WAY A PERSON DRIVES IT: F2 is
+# continue, F3 is back, the arrow keys move between fields and list rows, and Space selects a radio
+# row. MEASURED end to end on the pod against OI-hipster-minimal-20261030.iso, 2026-11-23.
+#
+# THE ONE THING THAT IS NOT OBVIOUS IS THAT `ret` DOES NOT MOVE BETWEEN FIELDS ON THE USERS PAGE.
+# MEASURED: `admin` was typed into Root password, `ret` was pressed, and the cursor was still in Root
+# password - the second `admin` landed in the SAME box and the page ended with one field holding ten
+# characters and five empty. `down` is what moves to the next field, so every field below is typed
+# and then stepped away from.
+#
+# THE RED LINE AT THE BOTTOM IS A HINT, NOT AN ERROR. On the Network page it reads "Select the wired
+# network configuration: Automatically or None." and it stays on screen after Automatically has been
+# selected; waiting for it to disappear would hang. F2 is what moves on, once the radio is chosen.
+#
+# 1024x768 IS DELIBERATE. The text console renders 80x25 characters at the firmware's font size, and
+# this file's screen reads were measured at this resolution. A 1080p framebuffer would change the
+# glyph size and the rects with it.
+walkthrough "openindiana 2026.10 - the text installer, to an installed system"
+resolution 1024x768
+recording_resolution 1024x768
+var disk_gb
+  default "25"
+  from args.disk_gb
+var out
+  default out/distro.qcow2
+  from args.out
+password admin
+var user
+  default vmuser
+  from args.user
+
+step "the media this stage boots from is already on disk"
+  needs [OI-hipster-minimal-20261030.iso]
+
+
+step "create the empty disk"
+  disk
+    file disk.qcow2
+    size "{{ disk_gb }}"
+
+
+step "boot the installer"
+  boot
+    machine "q35,accel=kvm,vmport=off"
+    args [["-cpu", "Skylake-Client-v4"], ["-smp", "4"], ["-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd"], ["-drive", "if=pflash,format=raw,file=OVMF_VARS.fd"], ["-m", "4096"], ["-chardev", "socket,id=qga0,path=qga.sock,server=on,wait=off"], ["-device", "isa-serial,chardev=qga0"], ["-device", "VGA,xres=1024,yres=768"], ["-device", "qemu-xhci,id=xhci"], ["-device", "usb-tablet,bus=xhci.0"], ["-device", "usb-kbd,bus=xhci.0"], ["-drive", "file=OI-hipster-minimal-20261030.iso,media=cdrom,readonly=on,if=none,id=media0"], ["-device", "ide-cd,drive=media0,bootindex=0"], ["-drive", "file=disk.qcow2,if=none,format=qcow2,id=target"], ["-device", "virtio-blk-pci,drive=target,bootindex=1"], ["-netdev", "tap,id=net0,ifname=qemutap0,script=no,downscript=no"], ["-device", "virtio-net-pci,netdev=net0,mac=52:54:00:56:4d:01,romfile=,host_mtu=1450"]]
+    timeout 1800
+
+
+# THE LOADER PRINTS ON THE SERIAL LINE, SO THIS WAIT NEEDS NO OCR: GRUB's menu, then "Loading unix...",
+# then "Booting...". MEASURED: boot_archive is loaded by firmware and decompressed by the kernel, and
+# the text installer is on screen about two and a half minutes after "Booting...", which is why the
+# console read is only the first half of the wait and the screen read that follows it is generous.
+step "the loader has handed over to the kernel"
+  until "Loading unix"
+  from console
+  timeout 300
+
+
+step "the keyboard question is on screen"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name kb
+    until
+      bind asking
+      source kb
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      words [[keyboard, layout]]
+    max 60
+
+
+# 47 IS US-ENGLISH IN THIS LIST - "47. US-English" is its last row - and typing it and pressing Return
+# is what the prompt says: "To select the keyboard layout, enter a number [default 47]".
+step "keyboard layout 47, US-English"
+  input text "47"
+  settle 1
+
+
+step "take it"
+  input ret
+  settle 25
+
+
+step "the language question is on screen"
+  repeat
+    do
+      item
+        settle 4
+      item "read the screen"
+        read
+          name lang
+    until
+      bind asking
+      source lang
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      words [[English]]
+    max 40
+
+
+# THE LANGUAGE PAGE'S DEFAULT IS 1 AND ITS ONLY ROW IS "1. English", so Return takes it.
+step "english, the default"
+  input ret
+  settle 25
+
+
+step "the installation menu is on screen"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name menu
+    until
+      bind shown
+      source menu
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      words [[Install, OpenIndiana]]
+    max 60
+
+
+# "1 Install OpenIndiana" is the menu's first row and its default answer.
+step "install openindiana"
+  input ret
+  settle 30
+
+
+step "the welcome page is up"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name welcome
+    until
+      bind up
+      source welcome
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      words [[F2_Continue], [Thanks, for, choosing]]
+    max 40
+
+
+step "continue past the welcome page"
+  input f2
+  settle 15
+
+
+step "the disk page is up, with the virtio disk already ticked"
+  repeat
+    do
+      item
+        settle 4
+      item "read the screen"
+        read
+          name disks
+    until
+      bind up
+      source disks
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      words [[Where, should, OpenIndiana, be, installed], [Virtio]]
+    max 40
+
+
+step "continue with the whole disk"
+  input f2
+  settle 15
+
+
+# THE GPT WARNING PUTS THE CURSOR ON CANCEL, WHICH IS THE SAFE ANSWER AND THE WRONG ONE HERE. `right`
+# moves the selection to Continue and Return takes it. MEASURED: without the `right` the dialog simply
+# closes and nothing is installed.
+step "accept the GPT warning, which starts on Cancel"
+  do
+    item
+      input right
+      settle 1
+    item
+      input ret
+      settle 15
+
+
+step "the fdisk page is up"
+  repeat
+    do
+      item
+        settle 4
+      item "read the screen"
+        read
+          name fdisk
+    until
+      bind up
+      source fdisk
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      words [[whole, disk], [fdisk]]
+    max 40
+
+
+# "Use the whole disk (EFI)" IS THE PROPOSED AND PRESELECTED ROW, and it is the one that matches the
+# GPT label the warning above just accepted. Return on it is enough; nothing needs moving.
+step "the whole disk, EFI"
+  input f2
+  settle 20
+
+
+step "the network page is up"
+  repeat
+    do
+      item
+        settle 4
+      item "read the screen"
+        read
+          name net
+    until
+      bind up
+      source net
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      words [[Computer, Name], [wired]]
+    max 40
+
+
+# THE CURSOR STARTS IN THE Computer Name BOX, ONE `down` FROM THE FIRST RADIO ROW. MEASURED: from
+# there, one `down` reaches "Automatically", two reach "Manually", three reach "None", and Space
+# selects whatever the cursor is on. Automatic is right because the daemon runs a DHCP server for the
+# guest - the smoke stage reaches sshd on 172.30.0.2 through exactly this setting.
+step "move to the Automatic row"
+  input down
+  settle 2
+
+
+step "choose automatic configuration"
+  input space
+  settle 3
+
+
+step "continue, past the red hint line"
+  input f2
+  settle 15
+
+
+step "the time zone page is up"
+  repeat
+    do
+      item
+        settle 4
+      item "read the screen"
+        read
+          name tz
+    until
+      bind up
+      source tz
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      words [[Time, Zone], [UTC/GMT]]
+    max 40
+
+
+# UTC/GMT IS THE FIRST ROW AND THE PRESELECTED ONE, and it is the only honest answer for a machine
+# whose clock is the runner's.
+step "UTC/GMT"
+  input f2
+  settle 12
+
+
+step "the date and time page is up"
+  repeat
+    do
+      item
+        settle 4
+      item "read the screen"
+        read
+          name date
+    until
+      bind up
+      source date
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      words [[Date, and, Time], [Year], [Hour]]
+    max 40
+
+
+# THE PAGE IS PRELOADED FROM THE FIRMWARE'S CLOCK AND NEEDS NO EDITING.
+step "the clock is already right"
+  input f2
+  settle 15
+
+
+step "the users page is up"
+  repeat
+    do
+      item
+        settle 4
+      item "read the screen"
+        read
+          name users
+    until
+      bind up
+      source users
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      words [[Root, password], [Username]]
+    max 40
+
+
+# SIX FIELDS, AND `down` IS WHAT MOVES BETWEEN THEM - NOT Return, which is measured above to leave the
+# cursor where it was. The order on the page is Root password, its Confirm, Your real name, Username,
+# User password, its Confirm; the `down` after the last one lands back on F2's row and does nothing.
+step "type the root password"
+  input text "{{ password }}"
+  type_gap 0.1
+  settle 2
+
+
+step "move down to the root password again"
+  input down
+  settle 1
+
+
+step "type the root password again"
+  input text "{{ password }}"
+  type_gap 0.1
+  settle 2
+
+
+step "move down to the real name"
+  input down
+  settle 1
+
+
+step "type the real name"
+  input text "{{ user }}"
+  settle 2
+
+
+step "move down to the username"
+  input down
+  settle 1
+
+
+step "type the username"
+  input text "{{ user }}"
+  settle 2
+
+
+step "move down to the user's password"
+  input down
+  settle 1
+
+
+step "type the user's password"
+  input text "{{ password }}"
+  type_gap 0.1
+  settle 2
+
+
+step "move down to the user's password again"
+  input down
+  settle 1
+
+
+step "type the user's password again"
+  input text "{{ password }}"
+  type_gap 0.1
+  settle 2
+
+
+step "the users page took all six"
+  repeat
+    do
+      item
+        settle 3
+      item "read the screen"
+        read
+          name filled
+    until
+      bind ok
+      source filled
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      words [["{{ user }}"]]
+    max 20
+
+
+step "continue from the users page"
+  input f2
+  settle 15
+
+
+step "the summary page is up"
+  repeat
+    do
+      item
+        settle 4
+      item "read the screen"
+        read
+          name summary
+    until
+      bind up
+      source summary
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      words [[Installation, Summary], [F2_Install]]
+    max 40
+
+
+step "install"
+  input f2
+  settle 30
+
+
+# THE TRANSFER IS THE LONG PART: MEASURED at roughly 3500 MiB written in about three minutes on the
+# pod, then a minute more for the boot environment to be created. The page's own progress line and
+# the final "Installation Complete" both sit in the same box, so this waits for the words that only
+# the finished page carries.
+step "the transfer finished"
+  repeat
+    do
+      item
+        settle 15
+      item "read the screen"
+        read
+          name done
+    until
+      bind finished
+      source done
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      words [[Installation, Complete], [F8_Reboot]]
+    max 80
+
+
+step "stop the machine"
+  stop kill
+  timeout 120
+
+
+step "publish the disk"
+    save "{{ out }}"

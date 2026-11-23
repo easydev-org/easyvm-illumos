@@ -14,9 +14,34 @@
 # disk at bootindex=0 with `discard=unmap`, no installer medium - because a smoke test that boots a
 # different machine from the one the next stage does is measuring itself rather than the artifact.
 #
-# OPENINDIANA BOOTS THROUGH UEFI. Since the 2026.10 snapshot its live image carries UEFI framebuffer
-# support, and an installed rpool is started by the firmware's own loader - so OVMF and a virtio disk
-# are the whole machine, exactly as they are for FreeBSD.
+# OPENINDIANA'S INSTALLED DISK IS STARTED BY ITS OWN LOADER, NOT BY THE FIRMWARE'S ESP ENTRY.
+#
+# THE COMMENT THAT USED TO STAND HERE CLAIMED THE OPPOSITE - that the 2026.10 image "carries UEFI
+# framebuffer support" and that an installed rpool is started by the firmware's own loader, so
+# `BdsDxe: starting` was the witness to wait for. MEASURED on the pod, 2026-11-23, on a disk this very
+# install produced: the firmware prints nothing at all about a bootable device, and the console goes
+#
+#	Loading unix...
+#	Loading /platform/i86pc/amd64/boot_archive...
+#	Booting...
+#	OpenIndiana Hipster 2026.10 Version illumos-c893fd03ad 64-bit
+#	openindiana console login:
+#
+# - the illumos boot loader in the disk's own boot slice, which is what the installer writes on the
+# whole-disk EFI layout. So `BdsDxe` would never appear and waiting for it would time out on a disk
+# that boots perfectly.
+#
+# THE WITNESS IS THEREFORE THE LOGIN PROMPT, which is a stronger claim than any firmware message: it
+# means the kernel mounted rpool, started svc:/system/console-login, and the system is up. MEASURED
+# at about two and a half minutes from `boot`.
+#
+# THE SSH LINE IS A BONUS AND NOT A CONDITION. The same console showed
+#
+#	openindiana sshd-session[1379]: error: PAM: Authentication failed for user vmuser from 172.30.0.1
+#
+# - the daemon's own probe reaching sshd through the guest's DHCP address, which is how the next stage
+# logs in. It arrives a few seconds after the prompt and in a different order on a slow runner, so it
+# is not what this waits for.
 walkthrough "the published disk starts - nothing else"
 resolution 1920x1080
 recording_resolution 1920x1080
@@ -30,17 +55,12 @@ step "boot the published disk"
 # `BdsDxe: starting` IS THE FIRMWARE SAYING IT FOUND SOMETHING BOOTABLE, and a disk it cannot start
 # prints the opposite sentence on the same console. That is the difference between a boot and a black
 # screen, and it is a better witness than any brightness threshold.
-step "the firmware handed control to the disk"
-  until "BdsDxe: starting"
+step "the installed system is up"
+  until "console login"
   from console
-  timeout 300
+  timeout 600
 
-# THREE MINUTES OF RECORDING, AND NOTHING IS READ FROM IT.
-#
-# THIS DELIBERATELY HAS NO SCREEN CHECK. Every guest draws a different boot sequence - a loader menu,
-# a kernel log, a splash, a login prompt - so any brightness or content threshold would either be
-# tuned to one of them or be so loose it could not fail. The recording is the evidence a person
-# watches, and three minutes is enough to see a panic or an immediate reboot.
+
 step "record three minutes of the boot"
   settle 180
 
