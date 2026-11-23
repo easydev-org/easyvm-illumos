@@ -1,0 +1,48 @@
+name: openindiana-2026.10-install
+
+# INSTALL OPENINDIANA ONTO A DISK THIS STAGE MAKES, AND PUBLISH IT.
+#
+# THIS IS THE FIRST STAGE, SO IT HAS NO `pull:`: the disk is created by the walkthrough's `disk:` step
+# and the medium arrives from this repository's ghcr package as `assets:`.
+#
+# THE INSTALLER IMAGE IS MIRRORED, NOT FETCHED FROM THE PUBLISHER. `artifacts-publish.yml` puts it in
+# the package once, with its digest checked; a stage asks the package and nothing upstream.
+
+on:
+  workflow_dispatch:
+    inputs:
+      disks_repository:
+        description: "the ghcr repository that holds the disks and media"
+        default: "easydev-org/easyvm-illumos"
+
+concurrency:
+  group: openindiana-2026.10-install
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  checks: write
+
+jobs:
+  install:
+    uses: easydev-org/easyvm/.github/workflows/stage.yml@v0.0.3-dev
+    secrets: inherit
+    with:
+      image_repository: easydev-org/easyvm
+      image_tag: v0.0.3-dev
+      disk_gb: "25"
+      group: openindiana-2026.10-install
+      disks_repository: ${{ inputs.disks_repository }}
+      stages: |
+        [
+          {
+            "name": "openindiana-install",
+            "file": "openindiana/steps/install.walk",
+            "pull": "",
+            "assets": ["iso-openindiana-2026.10-minimal:OI-hipster-minimal-20261030.iso.tar"],
+            "out": "openindiana-install.qcow2",
+            "publish": "openindiana-install",
+            "timeout": 120
+          }
+        ]
