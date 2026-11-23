@@ -27,8 +27,10 @@ published a 1049 MiB disk. The parts that are not guessable, each measured:
 - **The time zone default is UTC/GMT**, and the date page is preloaded from the firmware clock.
 
 The installed disk is then started by **illumos's own loader in the disk's boot slice**, not by a
-firmware ESP entry - so `smoke.walk` waits on the console for `console login`, not for
-`BdsDxe: starting`.
+firmware ESP entry. `smoke.walk` therefore reads the **screen**, not the serial console: the illumos
+kernel hands its console to the framebuffer once it starts, so `console.log` stops at `Booting...`
+and never receives the `openindiana console login:` prompt that a complete boot prints. Measured on
+run 45226041744, where the recording showed that prompt while the console read timed out.
 
 ## What makes this guest different
 
