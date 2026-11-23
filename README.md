@@ -5,9 +5,30 @@ Walkthroughs and CI for **OpenIndiana** guests, driven by
 
 ## What lives here
 
-`openindiana/steps/` - the `.walk` files for `install` and `smoke`, plus the reference images they
-compare against. The other stages (`ssh`, `vm-configure`) are added once an install produces a disk
-that boots.
+`openindiana/steps/` - the `.walk` files for `install` and `smoke`. The other stages (`ssh`,
+`vm-configure`) are added once an install produces a disk that boots.
+
+## The install is a text installer, and it is driven like one
+
+`openindiana/steps/install.walk` is 45 steps and was driven end to end by hand on the pod before it
+was committed, then run on CI: `openindiana-2026.10-install.yml` reached `completed/success` and
+published a 1049 MiB disk. The parts that are not guessable, each measured:
+
+- **`ret` does not move between fields on the Users page.** `admin` typed, Return pressed, cursor
+  still in Root password, second `admin` landed in the same box. `down` is the field mover, so each
+  of the six fields is typed and then stepped away from.
+- **The Network page's red bottom line is a hint, not an error.** It stays after "Automatically" is
+  selected, and F2 is what moves on. The cursor starts in Computer Name, one `down` from the first
+  radio row, and `spc` selects it.
+- **The GPT warning's cursor starts on Cancel**, so it takes `right` then Return. Without the
+  `right` the dialog closes and nothing is installed.
+- **The Fdisk page proposes and preselects "Use the whole disk (EFI)"**, which matches the GPT label
+  the warning just accepted, so F2 is enough.
+- **The time zone default is UTC/GMT**, and the date page is preloaded from the firmware clock.
+
+The installed disk is then started by **illumos's own loader in the disk's boot slice**, not by a
+firmware ESP entry - so `smoke.walk` waits on the console for `console login`, not for
+`BdsDxe: starting`.
 
 ## What makes this guest different
 

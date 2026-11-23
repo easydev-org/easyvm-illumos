@@ -55,10 +55,50 @@ step "boot the published disk"
 # `BdsDxe: starting` IS THE FIRMWARE SAYING IT FOUND SOMETHING BOOTABLE, and a disk it cannot start
 # prints the opposite sentence on the same console. That is the difference between a boot and a black
 # screen, and it is a better witness than any brightness threshold.
+# THE LOGIN PROMPT IS ON THE SCREEN AND NOT ON THE CONSOLE, AND THAT IS THE WHOLE FIX.
+#
+# MEASURED on run 45226041744, whose recording shows the installed disk booting all the way:
+#
+#	t=300s   OpenIndiana Hipster 2026.10 Version illumos-c893fd03ad 64-bit
+#	         NOTICE: Performing full ZFS device scan!
+#	         NOTICE: Original /devices path (/pci@0,0/pci1af4,2@3/blkdev@0,0:b) not available;
+#	                 ZFS is trying an alternate path (/pci@0,0/pci1af4,2@4/blkdev@0,0:b)
+#	         Loading smf(7) service descriptions: 151/151
+#	         Configuring devices.
+#	         Hostname: openindiana
+#	         openindiana console login:
+#
+# - a complete boot, and the disk is good. The step waited for that line IN console.log, which ends
+# at
+#
+#	Loading /platform/i86pc/amd64/boot_archive.hash...
+#	Booting...
+#
+# and never receives another byte. The illumos kernel hands its console to the FRAMEBUFFER once it
+# starts: the serial line carries the loader's output and nothing after it, which is the same split
+# the installer image shows. So `until ... from console` could not be satisfied by a machine that had
+# already reached a login prompt, and the run timed out at its full ten minutes.
+#
+# THE ZFS SCAN IS ALSO WHY THIS IS A SCREEN READ AND NOT A SHORT ONE: the disk is a virtio-blk device
+# and its /devices path differed from the one the pool was created with, so ZFS rescanned and the
+# prompt arrives around five minutes rather than the two and a half an identical disk shows locally.
+# The rect covers the bottom of the 1920x1080 frame where the prompt is drawn.
 step "the installed system is up"
-  until "console login"
-  from console
-  timeout 600
+  repeat
+    do
+      item
+        settle 10
+      item "read the screen"
+        read
+          name up
+    until
+      bind login
+      source up
+      mode text
+      rect [0, 840, 1920, 1080]
+      rect_at [1920, 1080]
+      words [[console, login], [login]]
+    max 60
 
 
 step "record three minutes of the boot"
