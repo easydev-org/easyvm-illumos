@@ -248,7 +248,7 @@ step "move to the Automatic row"
 
 
 step "choose automatic configuration"
-  input space
+  input spc
   settle 3
 
 
