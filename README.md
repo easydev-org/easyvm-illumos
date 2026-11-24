@@ -1,4 +1,4 @@
-# easyvm-illumos
+# easyvm-solaris
 
 Walkthroughs and CI for **OpenIndiana** guests, driven by
 [`easydev-org/easyvm`](https://github.com/easydev-org/easyvm).
@@ -56,4 +56,4 @@ gh workflow run openindiana-2026.10-smoke.yml
 The **engine** and the **CI machinery** are both in `easydev-org/easyvm`; these workflows call
 `easydev-org/easyvm/.github/workflows/stage.yml@v0.0.3-dev` for the second.
 
-Disks pull from and publish to this repository's own ghcr package, `easydev-org/easyvm-illumos`.
+Disks pull from and publish to this repository's own ghcr package, `easydev-org/easyvm-solaris`.

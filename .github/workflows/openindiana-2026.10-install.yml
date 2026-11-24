@@ -13,7 +13,7 @@ on:
     inputs:
       disks_repository:
         description: "the ghcr repository that holds the disks and media"
-        default: "easydev-org/easyvm-illumos"
+        default: "easydev-org/easyvm-solaris"
 
 concurrency:
   group: openindiana-2026.10-install

@@ -19,7 +19,7 @@ on:
         default: "openindiana-install"
       disks_repository:
         description: "the ghcr repository that holds the disk"
-        default: "easydev-org/easyvm-illumos"
+        default: "easydev-org/easyvm-solaris"
 
 concurrency:
   group: openindiana-2026.10-smoke
