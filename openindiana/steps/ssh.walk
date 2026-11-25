@@ -253,14 +253,40 @@ step "install the desktop in the root shell"
 
 step "run the install"
   input ret
-  timeout 5400
+  settle 10
 
 
-# `pkg` PRINTS NOTHING WHEN IT SUCCEEDS AND ITS PROGRESS IS THE WHOLE SCREEN. So the check is the
-# session file the group installs, read over ssh, and a `PKG_EXIT=0` line the console keeps.
-step "read the console after the install"
-  read
-    name after_pkg
+# THE EXIT LINE IS WAITED FOR, NOT INSPECTED ONCE, AND THE FIRST RUN IS WHAT SAID SO.
+#
+# MEASURED on the run before this one: the console at t=255 - the last frame before the step was
+# abandoned - still read
+#
+#	root@openindiana:~# pkg install --accept --licenses solaris-desktop; echo PKG_EXIT=$?
+#
+# with the prompt still at the end of the line. The command had been TYPED and the Return had not
+# taken effect yet, so a `check:` placed straight after it read the boot text still on the screen and
+# answered `none of "PKG_EXIT=0" found`. A settle cannot fix that: how long `pkg` takes depends on the
+# network, which is the whole reason it needs a budget rather than a pause.
+#
+# SO THIS IS A LOOP WITH A CEILING: it reads the screen until the line appears or ninety minutes pass.
+# `PKG_EXIT=` IS THE RIGHT THING TO WAIT FOR because the shell prints it whatever `pkg` decided - the
+# line appearing at all is "the command finished", and its VALUE is what the next step judges.
+step "wait for the install to finish"
+  repeat
+    do
+      item
+        settle 20
+      item "read the screen"
+        read
+          name after_pkg
+    until
+      bind done
+      source after_pkg
+      mode text
+      rect [0, 0, 1920, 1080]
+      rect_at [1920, 1080]
+      words [[PKG_EXIT]]
+    max 270
 
 
 step "the install reported success"

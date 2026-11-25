@@ -252,37 +252,24 @@ step "yes, the time zone is right"
   settle 20
 
 
-step "the ZFS image is being written"
+# THE ZFS IMAGE'S PROGRESS BOX IS A TRAP, AND MEASURED STEP 19 SAT IN IT FOR TWELVE MINUTES.
+#
+# `Installing ZFS image   0% .. 100%` is up for about three minutes and then REPLACED by
+# `Updating boot archive` and, minutes later, by `Installation Complete`. A `repeat` that waits for
+# `Installing ZFS image` therefore only succeeds if a sample lands inside that window - and MEASURED
+# on the pod at 2026-11-25, one run answered the summary page at 13:13:20 and by the first sample the
+# box already read 100%, so the gate never matched and the run sat there until its budget ran out
+# with a perfectly good install on disk.
+#
+# SO THE GATE IS THE ONE PAGE THAT STAYS: `Installation Complete`. It is the last thing the installer
+# draws, it names the boot environment it created, and it is what `reboot` is offered from. The image
+# write and the boot archive rebuild happen inside this single wait, and the settle at its top is what
+# keeps the samples off the transient pages.
+step "the installer writes the image and rebuilds the boot archive"
   repeat
     do
       item
-        settle 15
-      item "read the screen"
-        read
-          name writing
-    until
-      bind up
-      source writing
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      scale 1
-      words [[Installing, ZFS, image]]
-    max 80
-
-
-# THE BOOT ARCHIVE REBUILD IS THE TAIL OF THE INSTALL AND IT IS NOT SKIPPABLE. See the header: a disk
-# killed between the image and the archive cannot start. MEASURED at roughly six minutes for the image
-# and four more for the archive on the pod, so this settles for ten and then reads what the page says.
-step "let the image and the boot archive finish"
-  settle 600
-
-
-step "the installer has finished writing"
-  repeat
-    do
-      item
-        settle 15
+        settle 30
       item "read the screen"
         read
           name done
@@ -293,8 +280,31 @@ step "the installer has finished writing"
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
       scale 1
-      words [[Updating, boot, archive], [Installation, complete]]
+      words [[Installation, Complete]]
     max 60
+
+
+# THE 787 MiB THAT `Space` REPORTS IS THE POOL, NOT THE DISK, and the difference is the point of the
+# step above: the boot environment has to exist before the disk can start. MEASURED: a run stopped
+# while the page still read `Installing ZFS image  100%` produced a disk whose loader answered
+# `No rootfs module provided, aborting`, because the archive rebuild had not happened yet.
+step "the installer reports the boot environment it built"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name be
+    until
+      bind up
+      source be
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[omnios-r151060], [rpool, now, has, a, working, and, mounted, boot, environment]]
+    max 40
 
 
 step "stop the machine"

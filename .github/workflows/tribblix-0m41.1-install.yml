@@ -1,0 +1,49 @@
+name: tribblix-0m41.1-install
+
+# INSTALL TRIBBLIX ONTO A DISK THIS STAGE MAKES, AND PUBLISH IT.
+#
+# THIS IS THE FIRST STAGE, SO IT HAS NO `pull:`: the disk is created by the walkthrough's `disk:` step
+# and the medium arrives from this repository's ghcr package as `assets:`.
+#
+# IT IS THE FULL ISO, NOT THE MINIMAL ONE. Tribblix's live system is what writes the disk, and the
+# `desktop` overlay the walk asks for is installed FROM THE MEDIUM. The minimal ISO is 392 MiB and
+# carries no X11, so `desktop` would have to come off the network; this one is 1332 MiB and has
+# everything on the disc, which is what keeps the stage off pkgs.tribblix.org.
+on:
+  workflow_dispatch:
+    inputs:
+      disks_repository:
+        description: "the ghcr repository that holds the disks and media"
+        default: "easydev-org/easyvm-solaris"
+
+concurrency:
+  group: tribblix-0m41.1-install
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  checks: write
+
+jobs:
+  install:
+    uses: easydev-org/easyvm/.github/workflows/stage.yml@v0.0.4
+    secrets: inherit
+    with:
+      image_repository: easydev-org/easyvm
+      image_tag: v0.0.4
+      disk_gb: "25"
+      group: tribblix-0m41.1-install
+      disks_repository: ${{ inputs.disks_repository }}
+      stages: |
+        [
+          {
+            "name": "tribblix-install",
+            "file": "tribblix/steps/install.walk",
+            "pull": "",
+            "assets": ["iso-tribblix-0m41.1:tribblix-0m41.1.iso.tar"],
+            "out": "tribblix-install.qcow2",
+            "publish": "tribblix-install",
+            "timeout": 120
+          }
+        ]

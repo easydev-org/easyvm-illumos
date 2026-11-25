@@ -1,0 +1,66 @@
+# DOES THE PUBLISHED DISK START? Boot it, look, and kill it - nothing else.
+#
+# "THE INSTALL LEG PASSED" IS NOT THE SAME CLAIM. An install can answer every one of its steps and
+# still publish a disk no firmware will boot - MEASURED on android blissos 16.9.7, whose install ended
+# with "Congratulations!" and whose disk printed
+#
+#	BdsDxe: failed to load Boot0002 "UEFI QEMU HARDDISK QM00011" ... : Not Found
+#
+# so this file asks only whether the machine gets off the ground. It does not log in and does not
+# click; its artifact is the recording. `stage.yml` runs it with `out:` empty, which is what makes
+# "no disk to publish" a success rather than a warning.
+#
+# THE BOOT ARGUMENTS ARE THE INSTALL WALK'S, DELIBERATELY - same machine, same firmware, the target
+# disk at bootindex=0 with `discard=unmap`, no installer medium - because a smoke test that boots a
+# different machine from the one the next stage does is measuring itself rather than the artifact.
+#
+# TRIBBLIX'S INSTALLED DISK IS STARTED BY ITS OWN LOADER, NOT BY A FIRMWARE ESP ENTRY, AND ITS CONSOLE
+# STAYS ON THE SERIAL LINE. MEASURED on the pod, 2026-11-25, on a disk `live_install.sh -G c1t0d0
+# desktop` had just written, with the ISO detached:
+#
+#	Loading smf(7) service descriptions: 4/4
+#	Configuring devices.
+#	Hostname: tribblix
+#	Loading smf(7) service descriptions: 5/5
+#	tribblix console login:
+#
+# - about ninety seconds from `boot`. The SMF lines are the live system's, but they are also what the
+# installed one prints, so they are not a witness on their own: THE LOGIN PROMPT IS, because it means
+# svc:/system/console-login started from the installed rpool.
+walkthrough "the published disk starts - nothing else"
+resolution 1024x768
+recording_resolution 1024x768
+
+step "boot the published disk"
+  boot
+    machine "q35,accel=kvm,vmport=off"
+    args [["-cpu", "Skylake-Client-v4"], ["-smp", "4"], ["-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd"], ["-drive", "if=pflash,format=raw,file=OVMF_VARS.fd"], ["-m", "4096"], ["-chardev", "socket,id=qga0,path=qga.sock,server=on,wait=off"], ["-device", "isa-serial,chardev=qga0"], ["-device", "VGA,xres=1024,yres=768"], ["-device", "qemu-xhci,id=xhci"], ["-device", "usb-tablet,bus=xhci.0"], ["-device", "usb-kbd,bus=xhci.0"], ["-drive", "file=disk.qcow2,if=none,format=qcow2,discard=unmap,id=target"], ["-device", "virtio-blk-pci,drive=target,bootindex=0"]]
+    timeout 300
+
+
+step "the installed system is up"
+  repeat
+    do
+      item
+        settle 10
+      item "read the screen"
+        read
+          name up
+    until
+      bind login
+      source up
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[tribblix, console, login]]
+    max 60
+
+
+step "record three minutes of the boot"
+  settle 180
+
+
+step "stop the machine"
+  stop kill
+  timeout 120

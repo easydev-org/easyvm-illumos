@@ -1,0 +1,257 @@
+# TRIBBLIX 0m41.1, INSTALLED FROM ITS LIVE SYSTEM BY ITS OWN SCRIPT.
+#
+# TRIBBLIX IS NOT AN INSTALLER IMAGE. It boots into a live illumos system and stops at a login
+# prompt; the disk is written by `/root/live_install.sh`, run by hand as root. MEASURED on the pod
+# against tribblix-0m41.1.iso, 2026-11-25, and against the project's own install page
+# (tribblix.org/install.html, read 2026-11-25).
+#
+# THE BOOT ASKS ONE QUESTION BEFORE THE LOGIN, AND IT IS NOT THE INSTALLER'S. The keyboard layout
+# list ("To select the keyboard layout, enter a number [default 47]") is the LIVE SYSTEM's own, and
+# a single `ret` takes its default and drops to `tribblix console login:` a few seconds later. There
+# is no second page and no language question - unlike OpenIndiana, whose installer asks both.
+#
+# THE ACCOUNTS ARE THE PROJECT'S OWN AND ARE THE ONLY ONES THAT EXIST:
+#
+#	jack / jack        the unprivileged demo account
+#	root / tribblix    the administrator, reached with `su -` or by logging in directly
+#
+# so this walk logs in as root at the console, which is the account the install script must run as.
+#
+# THE INSTALL IS ONE LINE. `./live_install.sh -G c1t0d0 desktop` says: own the whole disk (-G creates
+# an EFI System partition and a whole-disk ZFS pool, which is what this guest's UEFI firmware needs),
+# install to c1t0d0, and add the `desktop` overlay. THE DISK NAME IS MEASURED, NOT GUESSED: `format`
+# on this machine lists exactly one device,
+#
+#	c1t0d0 <Virtio-Block Device-0000-25.00GB>
+#
+# and the run below reads that line back before it types the install, so a machine whose virtio disk
+# presents under a different name fails here rather than installing to nothing.
+#
+# THE INSTALLER ENDS WITH AN ERROR THAT IS NOT ONE. The project's own page says so:
+#
+#	"At the end of the install you will see an error `unable to remount` - This actually means that
+#	 the installation has succeeded - it's part of the reconfiguration to make the newly installed
+#	 disk the primary device."
+#
+# MEASURED, the console shows exactly that, followed by `Welcome to Tribblix`. So the completion
+# witness is `Welcome to Tribblix`, and NOT the absence of the remount message - waiting for silence
+# there would time out on a perfect install.
+#
+# THE DESKTOP OVERLAY IS WHY THIS IMAGE IS THE FULL ONE. The minimal ISO is 392 MiB and has no X11;
+# this one is 1332 MiB and carries the overlay set on the medium, so `desktop` installs from the DVD
+# without a network. That is what lets the smoke stage boot a system with a session to look at.
+walkthrough "tribblix 0m41.1 - its live system, its own script, an installed disk"
+resolution 1024x768
+recording_resolution 1024x768
+password admin
+var user
+  default vmuser
+  from args.user
+
+var disk_gb
+  default "25"
+  from args.disk_gb
+var out
+  default out/tribblix-install.qcow2
+  from args.out
+
+
+step "the media is on disk"
+  needs [tribblix-0m41.1.iso]
+
+
+step "create the empty disk"
+  disk
+    file disk.qcow2
+    size "{{ disk_gb }}"
+
+
+step "boot the live image"
+  boot
+    machine "q35,accel=kvm,vmport=off"
+    args [["-cpu", "Skylake-Client-v4"], ["-smp", "4"], ["-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd"], ["-drive", "if=pflash,format=raw,file=OVMF_VARS.fd"], ["-m", "4096"], ["-chardev", "socket,id=qga0,path=qga.sock,server=on,wait=off"], ["-device", "isa-serial,chardev=qga0"], ["-device", "VGA,xres=1024,yres=768"], ["-device", "qemu-xhci,id=xhci"], ["-device", "usb-tablet,bus=xhci.0"], ["-device", "usb-kbd,bus=xhci.0"], ["-drive", "file=tribblix-0m41.1.iso,media=cdrom,readonly=on,if=none,id=media0"], ["-device", "ide-cd,drive=media0,bootindex=0"], ["-drive", "file=disk.qcow2,if=none,format=qcow2,id=target"], ["-device", "virtio-blk-pci,drive=target,bootindex=1"]]
+    timeout 1800
+
+
+# THE LIVE SYSTEM PRINTS A LOT BEFORE THE KEYBOARD LIST - "Remounting root read/write", "Probing for
+# device nodes", "Preparing image for use" - and the list is the last thing before the prompt. The
+# words below are the list's own footer.
+step "the keyboard question is on screen"
+  repeat
+    do
+      item
+        settle 20
+      item "read the screen"
+        read
+          name kb
+    until
+      bind up
+      source kb
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[To, select, the, keyboard, layout, enter, a, number]]
+    max 90
+
+
+step "US-English, the default 47"
+  input ret
+  settle 15
+
+
+step "the live system has reached its login"
+  repeat
+    do
+      item
+        settle 10
+      item "read the screen"
+        read
+          name login
+    until
+      bind up
+      source login
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[tribblix, console, login]]
+    max 40
+
+
+# THE ROOT ACCOUNT IS THE ONE THE INSTALLER MUST RUN AS, and `tribblix` is its documented password.
+step "log in as root"
+  input text "root"
+  settle 2
+
+
+step "the password prompt"
+  input ret
+  settle 5
+
+
+step "the password"
+  input text "tribblix"
+  type_gap 0.1
+  settle 2
+
+
+step "shell"
+  input ret
+  settle 8
+
+
+step "root's shell is up"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name shell
+    until
+      bind up
+      source shell
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[root@tribblix]]
+    max 40
+
+
+# THE DISK IS ASKED FOR BY ITS OWN NAME AND THE ANSWER IS READ BACK. `format </dev/null` lists the
+# devices and exits; its "AVAILABLE DISK SELECTIONS" block is the measured truth this walk installs
+# against, so a machine that presents a different device name cannot silently install to nothing.
+step "ask format which disks there are"
+  input text "format </dev/null 2>&1 | tail -12"
+  settle 2
+
+
+step "run it"
+  input ret
+  settle 15
+
+
+step "the virtio disk is c1t0d0"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name disks
+    until
+      bind up
+      source disks
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[Virtio-Block, Device], [c1t0d0]]
+    max 40
+
+
+# ONE LINE, AND IT IS THE PROJECT'S OWN FORM: -G owns the whole disk and makes the EFI partition the
+# UEFI firmware needs, then the device, then the overlay. `desktop` is installed from the medium, not
+# the network, because this is the full ISO.
+step "install to the whole disk with the desktop overlay"
+  input text "cd /root && ./live_install.sh -G c1t0d0 desktop"
+  settle 2
+
+
+step "run the installer"
+  input ret
+  settle 30
+
+
+# THE INSTALLER STREAMS ITS PACKAGE WORK TO THE CONSOLE, so `Installing` is on screen for most of the
+# run and `Overlay installation complete` is what follows it.
+step "the overlays are being installed"
+  repeat
+    do
+      item
+        settle 20
+      item "read the screen"
+        read
+          name installing
+    until
+      bind up
+      source installing
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[Installing, TRIBlib], [Overlay, installation, complete]]
+    max 90
+
+
+# THE BOOT LOADER, THE BOOT ARCHIVE AND THE REMOUNT MESSAGE COME AFTER THE OVERLAYS, and the last
+# line is `Welcome to Tribblix`. See the header: `property may be set but unable to remount
+# filesystem` is expected and is not a failure.
+step "the installer finished and says so"
+  repeat
+    do
+      item
+        settle 20
+      item "read the screen"
+        read
+          name done
+    until
+      bind up
+      source done
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[Welcome, to, Tribblix]]
+    max 90
+
+
+step "stop the machine"
+  stop kill
+  timeout 120
+
+
+step "publish the disk"
+  save "{{ out }}"
