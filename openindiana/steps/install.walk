@@ -740,10 +740,31 @@ step "the root role was assumed"
 # SO THE COMMAND RUNS IN THE FOREGROUND AND THE PROMPT IS ANSWERED FROM THE CONSOLE. `y` then Return
 # is what a person types at that prompt, and the loop below is built to keep answering until the
 # licence page is gone rather than assuming one `y` is enough - some images ask once per publisher.
-step "install the desktop in the root shell"
-  input text "pkg install --accept --deny-new-be mate_install > /tmp/pkg.log 2>&1; echo PKG_EXIT=$? | tee /tmp/pkg.exit"
+# THE COMMAND IS WRITTEN TO A SCRIPT AND RUN, BECAUSE A 107-CHARACTER LINE LOSES ITS RETURN.
+#
+# MEASURED on run 45713558013, whose last frame shows BOTH commands still sitting at the prompt with
+# the cursor at the end of the second one - neither had run:
+#
+#	root@openindiana:~# pkg install --accept --deny-new-be mate_install > /tmp/pkg.log 2>&1; echo ...
+#	clear; [ -f /usr/share/xsessions/mate.desktop ] && echo MATE_SESSION_OK || echo MATE_SESSION_WAIT
+#
+# Typing is one action and Return is another, and on this console a long line typed at speed can still
+# be arriving when the Return is sent. A SIX-WORD SCRIPT NAME does not have that problem, and the
+# script itself can be as long as it likes.
+step "write the install as a script"
+  input text "printf '%s\\n' 'pkg install --accept --deny-new-be mate_install > /tmp/pkg.log 2>&1' 'echo PKG_EXIT=$? | tee /tmp/pkg.exit' > /tmp/as.sh"
   type_gap 0.05
-  settle 3
+  settle 4
+
+
+step "finish the script"
+  input ret
+  settle 6
+
+
+step "install the desktop in the root shell"
+  input text "sh /tmp/as.sh"
+  settle 4
 
 
 step "run the install"
@@ -845,60 +866,36 @@ step "answer the licence pages until the install proceeds"
 # `/usr/share/xsessions/mate.desktop` exists, which is the thing `pkg install mate_install` is FOR -
 # so the loop waits for the outcome rather than for a status line about it, and it can be asked again
 # every ten seconds for as long as the install takes.
-step "the desktop is installed, asked of the disk until it is"
+# `PKG_EXIT` IS SAFE TO GATE ON NOW, BECAUSE THE COMMAND LINE NO LONGER CONTAINS IT.
+#
+# MEASURED on run 45713558013, whose last frame showed BOTH commands sitting at the prompt with
+# nothing executed - the returns were eaten - and `MATE_SESSION_OK` matched on the TEXT OF THE COMMAND
+# rather than on any result. That is the third time a gate in this file has matched its own input.
+#
+# THE INSTALL NOW RUNS AS `sh /tmp/as.sh`, a six-word line that cannot lose its Return, and the script
+# prints `PKG_EXIT` when `pkg` finishes. So the word appears EXACTLY ONCE, in the OUTPUT, and nowhere
+# in the command this console echoes back.
+#
+# AND THE PROOF THAT FOLLOWS IS THE DISK, NOT THE WORD: the step after this asks the published system
+# over ssh whether `mate.desktop` exists.
+step "wait for the install to finish"
   repeat
     do
-      item "ask the disk whether the session file is there"
-        input text "clear; [ -f /usr/share/xsessions/mate.desktop ] && echo MATE_SESSION_OK || echo MATE_SESSION_WAIT"
       item
-        input ret
-        settle 10
+        settle 15
       item "read the screen"
         read
-          name matefile
+          name after_pkg
     until
-      bind up
-      source matefile
+      bind done
+      source after_pkg
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      words [[MATE_SESSION_OK]]
+      words [[PKG_EXIT]]
     max 400
 
 
-# THE EXIT CODE IS NOT RE-READ HERE, AND THE ZERO IS WHY. `PKG_EXIT=0` cannot be matched by this
-# console's reader (see the note in the wait above), and a check that repeats an unreadable word adds a
-# failure without adding evidence.
-#
-# THE PROOF IS THE NEXT STEP AND IT IS A BETTER ONE: it asks the PUBLISHED SYSTEM, over scp/ssh,
-# whether `mate.desktop` exists. That is a fact about the disk rather than about a line of console
-# output, and it cannot be satisfied by a command that never ran.
-
-
-# THE OLD "wait for the install to finish" STEP IS GONE ON PURPOSE.
-#
-# It existed to read `pkg`'s exit line off the console with a 40-minute ceiling. The licence loop
-# above already reaches that line (`__until__ = true (read "PKG_EXIT")` on run 45694800660), and the
-# step right here re-prints it from a FILE, where no post-install SMF message can scroll it away. A
-# second wait on the same line would only re-introduce the failure this step was added to end.
-
-
-# THE SESSION IS PROVEN BY THE CONSOLE STEP ABOVE, AND THE SSH COPY OF IT IS GONE.
-#
-# MEASURED on run 45713558013: the console step read `MATE_SESSION_OK` - the file is there, the
-# desktop installed - and the very next step failed on the SAME question asked over ssh:
-#
-#	ssh probe: dial tcp 172.30.0.1:2222: connect: no route to host
-#	prove the session is installed: the command exited 2
-#
-# The disk was correct; the network was not. This is the INSTALL leg, whose job ends when the disk
-# exists - sshd coming up is the SSH leg's measurement, and that leg waits on `machine_ssh` with its
-# own budget. Asking here made a finished install fail on a service this stage does not own.
-
-
-# THE DISPLAY MANAGER IS ENABLED IN THE SAME ROOT SHELL, FOR THE SAME REASON THE INSTALL WAS.
-# `pfexec svcadm enable` from vmuser's session is another command the account is not entitled to run -
-# the 49e152e run showed `pfexec` reaching nothing it did not already own.
 step "enable the display manager in the root shell"
   input text "svcadm enable -r svc:/application/graphical-login/lightdm:default; echo DM_EXIT=$?"
   type_gap 0.05
