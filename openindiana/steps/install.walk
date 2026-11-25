@@ -512,6 +512,40 @@ step "the installed system has reached its login"
     max 60
 
 
+# THE LOGIN PROMPT HAS TO BE ON SCREEN BEFORE ANYTHING IS TYPED AT IT, AND IT WAS NOT.
+#
+# MEASURED on run 45646822391, whose console at t=1800 and at t=6500 both read:
+#
+#	openindiana console login: yes | pkg install --accept --licenses mate_install > /tmp/pkg.log ...
+#	Password:
+#	openindiana console login:
+#
+# THE `pkg` COMMAND BECAME THE USERNAME. The four login steps ran while the guest was still booting,
+# so every keystroke went into a console that had nowhere to put it; by the time the prompt appeared,
+# the text was already queued as a login attempt, and the password prompt that followed belongs to
+# `su` - which had never run, because its own login never completed.
+#
+# THE BOOT BEFORE THIS ONE HAD THE SAME SHAPE AND PASSED BY LUCK: `smoke.walk` waits for a console
+# line, and the ssh stage waited for `machine_ssh`. Neither is available here, so the wait is on the
+# screen - the words the login prompt itself carries.
+step "wait for the console login prompt"
+  repeat
+    do
+      item
+        settle 10
+      item "read the console"
+        read
+          name loginprompt
+    until
+      bind up
+      source loginprompt
+      mode text
+      rect [0, 400, 1024, 768]
+      rect_at [1024, 768]
+      words [[console, login]]
+    max 60
+
+
 step "log in at the console as the account that exists"
   input text "{{ user }}"
   type_gap 0.1
@@ -539,13 +573,16 @@ step "read what the console says after logging in"
     name after_login
 
 
+# THE PROMPT ITSELF, NOT A `$`. A bare dollar sign is a glyph OCR reads as `S`, `s` or nothing, and
+# a check that cannot see it would fail on a login that worked. `vmuser@openindiana` is the shell's
+# own name for the account, which is what a successful login actually prints.
 step "the console is a shell, not a refusal"
   check
     source after_login
     mode text
-    rect [0, 0, 1024, 400]
+    rect [0, 0, 1024, 768]
     rect_at [1024, 768]
-    words [[$]]
+    words [["vmuser@openindiana"]]
     without [incorrect, "Permission denied"]
     name console_shell
 
