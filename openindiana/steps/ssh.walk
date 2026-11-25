@@ -1,12 +1,35 @@
 walkthrough "openindiana 2026.10 - sshd, a desktop, and a graceful shutdown"
 resolution 1920x1080
 recording_resolution 1920x1080
+# ROOT IS THE ADMINISTRATOR ON THIS SYSTEM, AND THAT IS A FACT OF THE INSTALL, NOT A PREFERENCE.
+#
+# MEASURED, three runs, before this line was written:
+#
+#	45612202261  `sudo pkg install -y solaris-desktop` -> `bash: line 1: sudo: command not found`
+#	45613187768  report: pfexec=/usr/bin/pfexec, id=uid=101(vmuser) gid=10(staff), profiles=All
+#	             and then `pkg install --accept --licenses` -> `Insufficient access`
+#	bd0900f run  report: auths=solaris.admin.wusb.read,solaris.device.cdrw,...  (NO packager)
+#	             and then `pfexec usermod -A +solaris.admin.packager vmuser` -> `Permission denied`
+#
+# SO `profiles: All` IS NOT PRIVILEGE ON THIS SYSTEM. It lists commands pfexec will let the user RUN
+# with the kernel's privileges attached, and `usermod` itself answers `Permission denied` - meaning
+# the account the text installer creates cannot change the system at all. OpenIndiana's installer
+# takes a root password (this walk's `password:`) and creates the named user as an ordinary account;
+# root is the only administrator it leaves behind.
+#
+# THE STAGE THEREFORE LOGS IN AS ROOT, which is what this disk's administrator IS. The alternative -
+# having the walk rewrite the authorization database as an unprivileged user - is not a thing that
+# can be done.
+#
+# `ssh_user` IS THE HEADER KEY THE SSH CLIENT READS; `var user` is not. The two are kept in step so
+# a reader does not have to know which one the client honours.
+ssh_user root
+var user
+  default root
+  from args.user
 var out
   default out/openindiana-ssh.qcow2
   from args.out
-var user
-  default vmuser
-  from args.user
 password admin
 ssh_port 2222
 
@@ -61,73 +84,29 @@ step "prove the boot environment is the one that was installed"
   timeout 120
 
 
-# WHETHER THIS ACCOUNT CAN RAISE PRIVILEGE IS A FACT ABOUT THE INSTALLER, NOT ABOUT THIS WALK, AND
-# THE FIRST RUN SHOWED IT HAD NEVER BEEN CHECKED.
+# THIS STAGE LOGS IN AS ROOT, SO THE THING TO REPORT IS THAT IT DID.
 #
-# MEASURED on 45612202261: the step after these read `bash: line 1: sudo: command not found`, which
-# says illumos has no sudo - it raises privilege with `pfexec` - and says nothing about whether
-# `vmuser` is ENTITLED to use it.
+# MEASURED, three runs, on WHY `ssh_user root` above exists at all:
 #
-# MEASURED on 45613187768, this step's first run:
+#	45612202261  sudo -> `command not found` (illumos has no sudo)
+#	45613187768  pfexec present, `profiles: All`, then `pkg install` -> `Insufficient access`
+#	bd0900f run  `auths` lacks solaris.admin.packager, and `pfexec usermod -A` -> `Permission denied`
 #
-#	pfexec: /usr/bin/pfexec
-#	id:     uid=101(vmuser) gid=10(staff)
-#	profiles:
-#	  Basic Solaris User
-#	  All
-#
-# AND THE NEXT STEP STILL FAILED, which is the whole reason `auths` is printed here too:
-#
-#	pkg install: Insufficient access to complete the requested operation.
-#	Please try the operation again as a privileged user.
-#
-# `profiles` LISTS COMMANDS; `pkg` CHECKS AN AUTHORIZATION. `/etc/security/prof_attr` defines
-# `All` as every executable attribute with NO authorizations behind them, and IPS answers only to
-# `solaris.admin.packager`. So a user can be told "All" and still be refused by the package manager -
-# which is what happened, and is exactly the difference this line exists to expose.
-#
-# `auths` is the list that matters for a decision like that, and printing it costs one line.
-step "report how this account could raise privilege"
-  ssh "sh -c 'echo \"sudo:   $(command -v sudo || echo none)\"; echo \"pfexec: $(command -v pfexec || echo none)\"; echo \"id:     $(id)\"; echo \"profiles:\"; profiles 2>/dev/null || echo \"  (no profiles command)\"; echo \"auths:\"; auths 2>/dev/null || echo \"  (no auths command)\"'" 
+# A user can be shown `All` and still be refused by usermod itself - the profile lists what pfexec
+# will execute, not what the account is allowed to change. The installer leaves root as the only
+# administrator, so the stage uses it and this step proves which account answered.
+step "the administrator session is root"
+  ssh "id -un"
   timeout 120
 
 
-# THE AUTHORIZATION IS GRANTED HERE, WITH THE PROFILE THAT IS ALREADY PROVEN TO WORK.
+# THE DESKTOP IS WHAT THIS STAGE ADDS, AND IT IS INSTALLED AS ROOT BECAUSE ROOT IS THE ADMINISTRATOR.
 #
-# `pfexec usermod` RUNS AS ROOT because profile `All` grants the command, and `usermod` then writes
-# the authorization into the user's own `user_attr` entry. THE SESSION THAT RUNS IT DOES NOT GAIN IT -
-# illumos reads authorizations at login - but every step after this opens a NEW ssh session, so the
-# next one sees the list as it is now. That is why the grant and the use of it are separate steps.
-step "give this account the packager authorization"
-  ssh "pfexec usermod -A +solaris.admin.packager {{ user }}"
-  timeout 180
-
-
-step "prove a fresh session carries the authorization"
-  ssh "auths"
-  timeout 60
-
-
-# THE DESKTOP IS WHAT THIS STAGE ADDS, AND IT IS INSTALLED THE WAY OPENINDIANA INSTALLS THINGS.
+# NO `pfexec`, NO `sudo -S`, NO PASSWORD PIPE. The session this step runs in is already root - see the
+# `ssh_user root` paragraph at the top of this file for the three runs that established the account
+# the installer leaves behind cannot change the system - so the command is the command.
 #
-# `pfexec`, NOT `sudo`, AND THE FIRST RUN IS WHAT SAID SO. MEASURED on run 45612202261, steps 1-5 all
-# passed - `uname -a` answered `SunOS openindiana 5.11 illumos-c893fd03ad`, `id -un` answered
-# `vmuser`, `beadm list` showed the installed boot environment - and then step 6 died:
-#
-#	ssh: sudo pkg install -y solaris-desktop -> 127
-#	  bash: line 1: sudo: command not found
-#
-# illumos DOES NOT SHIP sudo. Privilege is raised with `pfexec`, and the step above now PROVES this
-# account may use it - MEASURED on run 45613187768:
-#
-#	pfexec: /usr/bin/pfexec
-#	id:     uid=101(vmuser) gid=10(staff)
-#	profiles: Basic Solaris User, All
-#
-# so no password is piped anywhere; `pfexec` reads the profile from the user's own entry.
-#
-# `--accept`, NOT `-y`, AND THE SAME RUN IS WHAT SAID SO. MEASURED on 45613187768, the step after the
-# profile report:
+# `--accept`, NOT `-y`, AND THE FIRST RUN IS WHAT SAID SO. MEASURED on run 45613187768:
 #
 #	pkg install: illegal option -- y
 #	Usage: pkg install [-nvq] [-C n] [-g path_or_uri ...] [--accept]
@@ -140,14 +119,14 @@ step "prove a fresh session carries the authorization"
 # packages, because naming them one by one is how a desktop ends up installed but unusable - a
 # session file with nothing to start it.
 #
-# NOTE: THE PACKAGE STEP HAS NOT REACHED THE NETWORK YET. What is measured is everything up to it,
-# including the two option spellings above; the group's name and whether `gdm` is the display
-# manager that ships with it are what the next run has to confirm.
+# NOTE: THE PACKAGE ITSELF HAS NOT RESOLVED YET. Runs so far established the account, the option
+# spelling and the authorization answer; the group's name, whether `gdm` is the display manager that
+# ships with it, and how long it takes are what the next run has to confirm.
 #
 # THE TIMEOUT IS LONG BECAUSE `pkg` RESOLVES AGAINST THE NETWORK. Ninety minutes is the ceiling a
 # leg has, not an expectation.
 step "install the desktop"
-  ssh "pfexec pkg install --accept --licenses solaris-desktop"
+  ssh "pkg install --accept --licenses solaris-desktop"
   timeout 5400
 
 
@@ -162,7 +141,7 @@ step "the display manager is the one that starts"
 
 
 step "enable the display manager at boot"
-  ssh "pfexec svcadm enable svc:/application/graphical-login/gdm:default"
+  ssh "svcadm enable svc:/application/graphical-login/gdm:default"
   timeout 180
 
 
@@ -193,12 +172,12 @@ step "the desktop is on screen"
 
 
 step "flush the writes before anything else"
-  ssh "pfexec sync"
+  ssh "sync"
   timeout 300
 
 
 step "flush the writes before the machine stops"
-  ssh "pfexec sync"
+  ssh "sync"
   timeout 300
 
 

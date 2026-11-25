@@ -1,6 +1,10 @@
 walkthrough "openindiana 2026.10 - the desktop is up"
 resolution 1920x1080
 recording_resolution 1920x1080
+# ROOT, FOR THE REASON `15/steps/ssh.walk` AT THE TOP OF THIS REPOSITORY DOCUMENTS IN FULL: the
+# account OpenIndiana's installer creates cannot change the system, `profiles: All` notwithstanding,
+# so the administrator this disk has is root. `ssh_user` is the header key the client reads.
+ssh_user root
 var hostname
   default easyvm-openindiana
   from args.hostname
@@ -15,7 +19,7 @@ var timezone
   default America/Los_Angeles
   from args.timezone
 var user
-  default vmuser
+  default root
   from args.user
 ssh_port 2222
 
@@ -75,7 +79,7 @@ step "the guest agent answers, which is what makes a graceful shutdown possible"
 # first leaves the running system answering to its old name, and a later stage that resolves it
 # fails for a reason that has nothing to do with the failure.
 step "set the machine's name"
-  ssh "pfexec sh -c 'svccfg -s svc:/system/identity:node setprop config/nodename = astring: {{ hostname }} && svccfg -s svc:/system/identity:node refresh && /usr/sbin/svccfg -s svc:/system/identity:node listprop config/nodename && hostname {{ hostname }}'"
+  ssh "sh -c 'svccfg -s svc:/system/identity:node setprop config/nodename = astring: {{ hostname }} && svccfg -s svc:/system/identity:node refresh && /usr/sbin/svccfg -s svc:/system/identity:node listprop config/nodename && hostname {{ hostname }}'"
   timeout 180
 
 
@@ -88,7 +92,7 @@ step "prove the name, in the service and in the running kernel"
 # both is what makes `date` agree now and after the next reboot, which is the pair a later stage can
 # actually check.
 step "set the time zone"
-  ssh "pfexec sh -c 'printf \"TZ={{ timezone }}\\n\" > /etc/TIMEZONE && ln -sf /usr/share/lib/zoneinfo/{{ timezone }} /etc/localtime'"
+  ssh "sh -c 'printf \"TZ={{ timezone }}\\n\" > /etc/TIMEZONE && ln -sf /usr/share/lib/zoneinfo/{{ timezone }} /etc/localtime'"
   timeout 120
 
 
@@ -101,7 +105,7 @@ step "prove the time zone"
 # takes `LANG` from the login environment; `/etc/default/init` is what a service started at boot
 # inherits.
 step "set the locale"
-  ssh "pfexec sh -c 'grep -q \"^LANG=\" /etc/default/init && sed -i \"s|^LANG=.*|LANG={{ locale }}|\" /etc/default/init || printf \"LANG={{ locale }}\\n\" >> /etc/default/init'"
+  ssh "sh -c 'grep -q \"^LANG=\" /etc/default/init && sed -i \"s|^LANG=.*|LANG={{ locale }}|\" /etc/default/init || printf \"LANG={{ locale }}\\n\" >> /etc/default/init'"
   timeout 120
 
 
@@ -116,12 +120,12 @@ step "prove the guest can fetch from the host share"
 
 
 step "flush the writes before anything else"
-  ssh "pfexec sync"
+  ssh "sync"
   timeout 300
 
 
 step "flush the writes before the machine stops"
-  ssh "pfexec sync"
+  ssh "sync"
   timeout 300
 
 
