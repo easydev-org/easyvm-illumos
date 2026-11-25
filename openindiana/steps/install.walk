@@ -701,6 +701,29 @@ step "the root role was assumed"
 # five lines of the real outcome - back on the console where the exit line is read from.
 # `-r` ON THE ENABLE IS NOT OPTIONAL: it restarts the service and the ones that depend on it, which is
 # what makes lightdm actually come up rather than record that it should.
+# `--licenses` IS WHAT PRINTED THE LICENCE, AND `--accept` IS ALL THE INSTALL NEEDS.
+#
+# THE MAN PAGE SETTLES IT (pkg(1), illumos and OmniOS - both documented from the same source):
+#
+#	--accept   Indicate that you agree to and accept the terms of the licenses of the packages
+#	           that are updated or installed. If you do not provide this option, and any package
+#	           licenses require acceptance, the installation operation fails.
+#
+#	--licenses Display all of the licences for the packages that are installed or updated as part
+#	           of this operation.
+#
+# SO `--accept --licenses` ACCEPTS THE LICENCE AND THEN PRINTS EVERY LINE OF IT TO THE CONSOLE. That
+# is the wall of CDDL text every failing run of this stage sat on - 379 words of "This U.S.
+# Government Rights clause is in lieu of ..." - and `PKG_EXIT` was never printed because `pkg` was
+# still writing the licence out, not because it was waiting for an answer.
+#
+# MEASURED on run 45681423101: forty minutes of licence body in the frame, the exit line never
+# written, `mate_install` never installed.
+#
+# `--licenses` was added on the theory that `pkg` was PROMPTING for a licence. It never prompts: it
+# fails when `--accept` is absent (the man page says so above), and `--licenses` is a display flag.
+# Removing it is the fix, and `--accept` alone is the non-interactive form.
+#
 # `yes | pkg install` DOES NOT ANSWER THE LICENCE PROMPT, AND THE RECORDING SAYS WHY.
 #
 # MEASURED on run 45681423101, whose console held nothing but licence text for forty minutes:
@@ -718,7 +741,7 @@ step "the root role was assumed"
 # is what a person types at that prompt, and the loop below is built to keep answering until the
 # licence page is gone rather than assuming one `y` is enough - some images ask once per publisher.
 step "install the desktop in the root shell"
-  input text "pkg install --accept --licenses mate_install; echo PKG_EXIT=$?"
+  input text "pkg install --accept mate_install; echo PKG_EXIT=$?"
   type_gap 0.05
   settle 3
 
