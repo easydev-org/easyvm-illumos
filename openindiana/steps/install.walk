@@ -785,7 +785,6 @@ step "answer the licence pages until the install proceeds"
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
       without [CDDL, "PURSUANT TO SECTION 9", "Government Rights", "GOVERNMENT RIGHTS"]
-      words [[PKG_EXIT]]
     max 40
 
 
@@ -807,21 +806,23 @@ step "answer the licence pages until the install proceeds"
 # SO THE COMMAND RECORDS ITS STATUS IN /tmp/pkg.exit AS WELL, and a step of its own `cat`s it. A
 # three-word line does not scroll away, and `PKG_EXIT` is still the gate because this console's reader
 # cannot tell `0` from `O` (see the note below).
-step "the install's status was recorded"
-  input text "cat /tmp/pkg.exit"
-  settle 2
-
-
-step "run it"
-  input ret
-  settle 8
-
-
+# `cat` IS INSIDE THE LOOP, BECAUSE THE FILE APPEARS WHEN `pkg` FINISHES AND NOT BEFORE.
+#
+# MEASURED on runs 45694800660 and 45707724998: `pkg install mate_install` takes forty to fifty
+# minutes, and its output SCROLLS - the console was still showing boot text when the licence loop gave
+# up, so nothing that reads the screen can tell "still installing" from "finished".
+#
+# `/tmp/pkg.exit` is written by the command itself (`| tee /tmp/pkg.exit`) and holds three words. It is
+# the only record that survives the scroll, and a `cat` that runs before the file exists simply prints
+# an error - so the cat is repeated rather than assumed.
 step "the recorded status is the line the loop saw"
   repeat
     do
+      item "ask the file where the install got to"
+        input text "clear; cat /tmp/pkg.exit 2>/dev/null"
       item
-        settle 5
+        input ret
+        settle 8
       item "read the screen"
         read
           name pkgfile
@@ -832,7 +833,7 @@ step "the recorded status is the line the loop saw"
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
       words [[PKG_EXIT]]
-    max 20
+    max 400
 
 
 # THE EXIT CODE IS NOT RE-READ HERE, AND THE ZERO IS WHY. `PKG_EXIT=0` cannot be matched by this
