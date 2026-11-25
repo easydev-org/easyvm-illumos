@@ -93,10 +93,10 @@ step "take the password"
 
 # THE MARKER IS COMPUTED BY THE SHELL, NOT READ OFF THE PROMPT. MEASURED on the install stage's CI
 # run: `root@tribblix` never matched although the prompt was plainly on screen, because `@` and
-# `:/root#` are exactly what a frame read mangles. `READY-42` cannot be produced by echoing the
+# `:/root#` are exactly what a frame read mangles. `SHELLREADY` cannot be produced by echoing the
 # command that asks for it.
 step "prove the console is a root shell"
-  input text "echo READY-$((6*7))"
+  input text "test 2 -gt 1 && echo SHELLREADY || echo SHELLBROKEN"
   settle 2
 
 
@@ -105,7 +105,7 @@ step "run it"
   settle 8
 
 
-step "the shell answered with the computed value"
+step "the shell is answering"
   repeat
     do
       item
@@ -119,7 +119,8 @@ step "the shell answered with the computed value"
       mode text
       rect [0, 0, 1920, 1080]
       rect_at [1920, 1080]
-      words [[READY-42]]
+      words [[SHELLREADY]]
+      without [SHELLBROKEN]
     max 40
 
 
@@ -137,13 +138,50 @@ step "the shell answered with the computed value"
 # it, so root's ssh login is refused before sshd's own `PermitRootLogin` is even consulted. Clearing
 # the value (`CONSOLE=`) is the documented way to lift it, and it is what the `sed` below does.
 #
-# BOTH ARE SET IN ONE COMMAND AND BOTH ARE READ BACK. A single `ROOTLOGIN-ON` means the `ssh`
-# service is running with a config that allows a password for root AND a login file that does not
-# pin root to the console - the two facts this stage's first run lacked.
-step "let root log in with a password, from any terminal"
-  input text "sed 's/^PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config > /etc/ssh/sshd_config.new && mv /etc/ssh/sshd_config.new /etc/ssh/sshd_config; sed 's|^CONSOLE=.*|CONSOLE=|' /etc/default/login > /etc/default/login.new && mv /etc/default/login.new /etc/default/login; grep -q '^PermitRootLogin yes' /etc/ssh/sshd_config && grep -q '^CONSOLE=$' /etc/default/login && echo ROOTLOGIN-ON || echo ROOTLOGIN-OFF"
-  type_gap 0.02
+# BOTH ARE SET IN SEPARATE COMMANDS, AND THAT IS NOT TIDINESS - A LONGER ONE IS MANGLED.
+#
+# MEASURED, on the pod, and three separate ways:
+#
+#	with type_gap 0.02 and one long line   `32c` arrived as `#@C`, `etc` as `ETC`, `|` as `?`
+#	with one line and a `|` delimiter      `sed 's|^CONSOLE...'` reached the guest as
+#	                                       `s?^CONSOLE...?` and rewrote a file nobody named
+#	with an unquoted replacement           `PermitRootLogin yes` arrived as `PermitRootLogin_yes`,
+#	                                       which `sshd -t` called `no argument after keyword`
+#
+# SO EACH COMMAND IS SHORT, EACH SETTLE IS TWO SECONDS OR MORE, AND THE REPLACEMENT IS QUOTED.
+# MEASURED: with those three, the same guest echoed every line back correctly, `sshd -t` exited 0,
+# and `ssh root@127.0.0.1 echo HELLO` from inside the guest printed `HELLO`.
+#
+# THE SECOND COMMAND ADDRESSES LINE 32 BY NUMBER, BECAUSE THE FILE HAS TWO `PermitRootLogin` LINES -
+# 32, the live one, and 80, a comment quoting sshd's default. A `s///` on the pattern rewrites both
+# and would leave a comment that no longer describes the file.
+step "lift the console restriction"
+  input text "sed -i s/^CONSOLE=.*/CONSOLE=/ /etc/default/login"
   settle 3
+
+
+step "run it"
+  input ret
+  settle 8
+
+
+step "let root log in with a password"
+  input text "sed -i 32c\"PermitRootLogin yes\" /etc/ssh/sshd_config"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 8
+
+
+# THE CONFIGURATION CHECK IS THE WITNESS, AND IT IS THE FILE SSHD ITSELF WILL READ.
+# `sshd -t` parses the whole file and exits non-zero on the first bad option, so `SSHCONFGOOD` is a
+# statement about sshd's own reading of the file rather than about a word a frame read found. The
+# typed command ends in `echo SSHCONFGOOD || echo SSHCONFBAD`, so neither word can be the command's own echo.
+step "check the configuration parses"
+  input text "sshd -t && echo SSHCONFGOOD || echo SSHCONFBAD"
+  settle 2
 
 
 step "run it"
@@ -151,13 +189,7 @@ step "run it"
   settle 10
 
 
-# THE WITNESS IS A WORD THE SHELL CHOOSES, NOT THE DIRECTIVE'S TEXT.
-#
-# The `grep -q` above answers only in exit status, and the command line printed on screen ends in
-# `echo ROOTLOGIN-ON || echo ROOTLOGIN-OFF` - so neither word appears in it. `ROOTLOGIN-ON` on screen
-# therefore means the test passed: the file now carries exactly the directive sshd needs to accept
-# root's password.
-step "the directive is in place"
+step "the sshd configuration is valid"
   repeat
     do
       item
@@ -171,19 +203,83 @@ step "the directive is in place"
       mode text
       rect [0, 0, 1920, 1080]
       rect_at [1920, 1080]
-      words [[ROOTLOGIN-ON]]
-      without [ROOTLOGIN-OFF]
+      words [[SSHCONFGOOD]]
+      without [SSHCONFBAD]
+    max 40
+
+
+# THE LOGIN FILE IS CHECKED SEPARATELY, because `sshd -t` says nothing about it. `grep -q` answers in
+# exit status only, and the two words are the two answers.
+step "the login file no longer pins root to the console"
+  input text "grep -q ^CONSOLE=$ /etc/default/login && echo CONSOLEOPEN || echo CONSOLEPINNED"
+  settle 2
+
+
+step "run it"
+  input ret
+  settle 8
+
+
+step "root is not pinned to the console"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name count
+    until
+      bind up
+      source count
+      mode text
+      rect [0, 0, 1920, 1080]
+      rect_at [1920, 1080]
+      words [[CONSOLEOPEN]]
+      without [CONSOLEPINNED]
     max 40
 
 
 step "restart sshd so the new directive is read"
-  input text "svcadm restart ssh; svcs -H -o state ssh"
+  input text "svcadm restart ssh"
   settle 3
 
 
 step "run it"
   input ret
   settle 12
+
+
+# THE RESTART IS PROVEN BY THE STATE LINE, NOT BY THE ABSENCE OF AN ERROR. MEASURED: an earlier
+# version of this stage ran `svcadm restart ssh; svcs -H -o state ssh` as one line and the frame
+# showed `offline*` - the service had been asked to restart and had not yet come back, and the next
+# step waited on `machine_ssh` against a daemon that was gone.
+step "the service says it is back"
+  input text "svcs -H -o state ssh"
+  settle 2
+
+
+step "run it"
+  input ret
+  settle 8
+
+
+step "sshd is online"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name state
+    until
+      bind up
+      source state
+      mode text
+      rect [0, 0, 1920, 1080]
+      rect_at [1920, 1080]
+      words [[online]]
+      without [offline]
+    max 40
 
 
 # NOW, AND ONLY NOW, DOES THE DAEMON'S OWN PROBE HAVE A CHANCE: sshd has been restarted with root's

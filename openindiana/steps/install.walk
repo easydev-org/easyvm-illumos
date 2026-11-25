@@ -700,7 +700,15 @@ step "wait for the install to finish"
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
       words [[PKG_EXIT=0], [PKG_EXIT=1], [PKG_EXIT=2], [PKG_EXIT=4]]
-    max 270
+    # THE LOOP AND THE JOB HAVE TO AGREE ON THE CEILING, AND THEY DID NOT.
+    #
+    # `max 270` AT 20 SECONDS IS NINETY MINUTES, and the job's `timeout:` was 120 - of which the
+    # installer alone spends about twelve. MEASURED on run 45646822391: this step began at minute 55
+    # and the job had 65 minutes left, so the loop could not use the budget it declared.
+    #
+    # The job is 180 now and the loop is 120 x 20s = 40 minutes, which finishes well inside it. A
+    # ceiling that cannot be reached is not a ceiling; it is a comment.
+    max 120
 
 
 step "the install reported success"
