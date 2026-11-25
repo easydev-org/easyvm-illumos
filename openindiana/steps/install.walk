@@ -741,7 +741,7 @@ step "the root role was assumed"
 # is what a person types at that prompt, and the loop below is built to keep answering until the
 # licence page is gone rather than assuming one `y` is enough - some images ask once per publisher.
 step "install the desktop in the root shell"
-  input text "pkg install --accept mate_install; echo PKG_EXIT=$?"
+  input text "pkg install --accept mate_install > /tmp/pkg.log 2>&1; echo PKG_EXIT=$? | tee /tmp/pkg.exit"
   type_gap 0.05
   settle 3
 
@@ -789,48 +789,50 @@ step "answer the licence pages until the install proceeds"
     max 40
 
 
-step "wait for the install to finish"
+# THE EXIT LINE IS ALSO WRITTEN TO A FILE, BECAUSE THE CONSOLE SCROLLS IT AWAY.
+#
+# MEASURED on run 45694800660, and this is the failure `--accept` alone did not fix: the licence loop
+# DID see the line - its own log reads
+#
+#	answer the licence pages until the install proceeds [until]: __until__ = true (read "PKG_EXIT")
+#
+# and the disk that run published was 19 GB with `mate_install` on it. The stage failed anyway,
+# because `pkg`'s own post-install work prints SMF defects to the same console:
+#
+#	SUNW-MSG-ID: SMF-8000-YX, TYPE: defect, VER: 1, SEVERITY: major
+#
+# and by the time the step after the loop read the screen, the exit line had been pushed off it. The
+# install SUCCEEDED and the walk could not see it.
+#
+# SO THE COMMAND RECORDS ITS STATUS IN /tmp/pkg.exit AS WELL, and a step of its own `cat`s it. A
+# three-word line does not scroll away, and `PKG_EXIT` is still the gate because this console's reader
+# cannot tell `0` from `O` (see the note below).
+step "the install's status was recorded"
+  input text "cat /tmp/pkg.exit"
+  settle 2
+
+
+step "run it"
+  input ret
+  settle 8
+
+
+step "the recorded status is the line the loop saw"
   repeat
     do
       item
-        settle 20
+        settle 5
       item "read the screen"
         read
-          name after_pkg
+          name pkgfile
     until
-      bind done
-      source after_pkg
+      bind up
+      source pkgfile
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      # `PKG_EXIT` RATHER THAN `PKG_EXIT=0`, BECAUSE THIS CONSOLE'S OCR CANNOT READ A ZERO.
-      #
-      # MEASURED on run 45694800660. The install SUCCEEDED - its last frame reads, on the screen:
-      #
-      #	Creating fast lookup database        Done
-      #	PKG_EXIT=0
-      #	root@openindiana:~#
-      #
-      # and the same frame, as this walk's own reader saw it, reads:
-      #
-      #	SUNW-MSG-I0: SMF-S8a8-YX, TYPE: defect, VER: 1, SEVERITY: majar
-      #
-      # `SUNW-MSG-ID` -> `I0`, `SMF-8000-YX` -> `S8a8-YX`, `major` -> `majar`. ZERO AND THE LETTER O ARE
-      # THE SAME GLYPH to this reader, so `PKG_EXIT=0` can never match and the loop ran all 120 attempts
-      # with the answer sitting on the screen.
-      #
-      # `PKG_EXIT` HAS NO DIGIT IN IT. It appears once in this session: the command that prints it was
-      # typed after a `clear`, so no echo of it survives to be confused with the result.
       words [[PKG_EXIT]]
-    # THE LOOP AND THE JOB HAVE TO AGREE ON THE CEILING, AND THEY DID NOT.
-    #
-    # `max 270` AT 20 SECONDS IS NINETY MINUTES, and the job's `timeout:` was 120 - of which the
-    # installer alone spends about twelve. MEASURED on run 45646822391: this step began at minute 55
-    # and the job had 65 minutes left, so the loop could not use the budget it declared.
-    #
-    # The job is 180 now and the loop is 120 x 20s = 40 minutes, which finishes well inside it. A
-    # ceiling that cannot be reached is not a ceiling; it is a comment.
-    max 120
+    max 20
 
 
 # THE EXIT CODE IS NOT RE-READ HERE, AND THE ZERO IS WHY. `PKG_EXIT=0` cannot be matched by this
@@ -840,6 +842,14 @@ step "wait for the install to finish"
 # THE PROOF IS THE NEXT STEP AND IT IS A BETTER ONE: it asks the PUBLISHED SYSTEM, over scp/ssh,
 # whether `mate.desktop` exists. That is a fact about the disk rather than about a line of console
 # output, and it cannot be satisfied by a command that never ran.
+
+
+# THE OLD "wait for the install to finish" STEP IS GONE ON PURPOSE.
+#
+# It existed to read `pkg`'s exit line off the console with a 40-minute ceiling. The licence loop
+# above already reaches that line (`__until__ = true (read "PKG_EXIT")` on run 45694800660), and the
+# step right here re-prints it from a FILE, where no post-install SMF message can scroll it away. A
+# second wait on the same line would only re-introduce the failure this step was added to end.
 
 
 step "prove the session is installed"
