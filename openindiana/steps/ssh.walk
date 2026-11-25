@@ -1,31 +1,29 @@
 walkthrough "openindiana 2026.10 - sshd, a desktop, and a graceful shutdown"
 resolution 1920x1080
 recording_resolution 1920x1080
-# ROOT IS THE ADMINISTRATOR ON THIS SYSTEM, AND THAT IS A FACT OF THE INSTALL, NOT A PREFERENCE.
+# THE ACCOUNT THAT LOGS IN IS THE ONE THE INSTALLER CREATED, BECAUSE IT IS THE ONLY ONE THAT CAN.
 #
-# MEASURED, three runs, before this line was written:
+# MEASURED, FOUR RUNS, AND EACH CLOSED A DIFFERENT DOOR:
 #
-#	45612202261  `sudo pkg install -y solaris-desktop` -> `bash: line 1: sudo: command not found`
-#	45613187768  report: pfexec=/usr/bin/pfexec, id=uid=101(vmuser) gid=10(staff), profiles=All
-#	             and then `pkg install --accept --licenses` -> `Insufficient access`
-#	bd0900f run  report: auths=solaris.admin.wusb.read,solaris.device.cdrw,...  (NO packager)
-#	             and then `pfexec usermod -A +solaris.admin.packager vmuser` -> `Permission denied`
+#	45612202261  `sudo pkg install -y ...`       -> bash: line 1: sudo: command not found
+#	45613187768  pfexec present, `profiles: All`, then pkg install -> Insufficient access
+#	bd0900f run  `auths` has NO solaris.admin.packager; `pfexec usermod -A` -> Permission denied
+#	ec7c6cb run  `ssh_user root`, and the console of that run shows why that cannot work either:
 #
-# SO `profiles: All` IS NOT PRIVILEGE ON THIS SYSTEM. It lists commands pfexec will let the user RUN
-# with the kernel's privileges attached, and `usermod` itself answers `Permission denied` - meaning
-# the account the text installer creates cannot change the system at all. OpenIndiana's installer
-# takes a root password (this walk's `password:`) and creates the named user as an ordinary account;
-# root is the only administrator it leaves behind.
+#		openindiana console login:
+#		sshd-session[1167]: error: PAM: Authentication failed for root from 172.30.0.1
 #
-# THE STAGE THEREFORE LOGS IN AS ROOT, which is what this disk's administrator IS. The alternative -
-# having the walk rewrite the authorization database as an unprivileged user - is not a thing that
-# can be done.
+#	             repeated every minute for the whole budget. The system booted perfectly -
+#	             illumos-c893fd03ad, 151/151 service descriptions, `Hostname: openindiana` - and
+#	             answered sshd; the ROOT PASSWORD IS NOT THE ONE THE INSTALL WALK TYPED. So vmuser
+#	             is the only account that authenticates, and it has no privilege.
 #
-# `ssh_user` IS THE HEADER KEY THE SSH CLIENT READS; `var user` is not. The two are kept in step so
-# a reader does not have to know which one the client honours.
-ssh_user root
+# THE PRIVILEGE IS THEREFORE ESTABLISHED ONCE, AT THE CONSOLE, WHICH IS THE INTERFACE THE INSTALLER
+# ITSELF USED. This is the first stage that boots the installed disk, so it is where the account the
+# installer left behind gets completed; every later stage inherits the result.
+ssh_user vmuser
 var user
-  default root
+  default vmuser
   from args.user
 var out
   default out/openindiana-ssh.qcow2
@@ -33,22 +31,6 @@ var out
 password admin
 ssh_port 2222
 
-
-# THIS STAGE CONTINUES THE INSTALLED SYSTEM, SO IT BOOTS THE SAME MACHINE ONLY.
-#
-# `-m 4096` IS THE INSTALL'S OWN VALUE, copied rather than guessed. The installed system was written
-# by a 4 GiB machine and its boot environment was sized against that; a smaller one turns a disk
-# that installs perfectly into a disk that stops at the loader.
-#
-# `discard=unmap` IS ON THE DISK'S LINE because this is NOT an install stage - the checkpoint is
-# explicit that install/setup/resume are the three that must not have it and every other stage must.
-# It is also what makes the guest's own `pkg` install return freed clusters to the overlay the host
-# is writing, which matters on a runner that holds the base, the diff and the compressed result at
-# once.
-#
-# `-cpu Skylake-Client-v4` AND `-smp 4` ARE THE SAME REASON THE WINDOWS STAGES NEED THEM: a walk
-# with neither gets qemu's `qemu64`, and a guest that the installer booted on Skylake is not
-# guaranteed to come back on a cpu model whose feature set is a strict subset of it.
 step "boot the installed disk"
   boot
     machine "q35,accel=kvm,vmport=off"
@@ -84,27 +66,93 @@ step "prove the boot environment is the one that was installed"
   timeout 120
 
 
-# THIS STAGE LOGS IN AS ROOT, SO THE THING TO REPORT IS THAT IT DID.
+# THE AUTHORIZATION HAS TO EXIST BEFORE ANY `ssh` STEP CAN USE IT, AND NO `ssh` STEP CAN CREATE IT.
 #
-# MEASURED, three runs, on WHY `ssh_user root` above exists at all:
+# Run bd0900f showed both halves of that at once: `auths` listed the ordinary user authorizations and
+# NOT `solaris.admin.packager`, and `pfexec usermod -A +solaris.admin.packager vmuser` answered
 #
-#	45612202261  sudo -> `command not found` (illumos has no sudo)
-#	45613187768  pfexec present, `profiles: All`, then `pkg install` -> `Insufficient access`
-#	bd0900f run  `auths` lacks solaris.admin.packager, and `pfexec usermod -A` -> `Permission denied`
+#	UX: usermod: ERROR: Permission denied.
 #
-# A user can be shown `All` and still be refused by usermod itself - the profile lists what pfexec
-# will execute, not what the account is allowed to change. The installer leaves root as the only
-# administrator, so the stage uses it and this step proves which account answered.
-step "the administrator session is root"
-  ssh "id -un"
-  timeout 120
+# The account cannot grant itself what it does not have. But root can - if root were reachable over
+# ssh, which the ec7c6cb run proved it is not (`PAM: Authentication failed for root` for ten minutes,
+# while the same disk's console showed a perfectly healthy boot).
+#
+# SO THE CHANGE IS MADE AT THE CONSOLE, WHICH IS THE INTERFACE THE INSTALL WALK ITSELF DROVE. The text
+# installer typed a root password on this very screen; the console therefore has an administrator the
+# network does not. Two keystrokes reach it and one command grants the authorization that every `ssh`
+# step after this needs.
+#
+#	`root` + Return            the console login prompt is on screen after boot - `smoke.walk` proves
+#	                           that, and it is the one thing every run of this stage has shown
+#	the root password         the same `{{ password }}` the install walk typed into the installer's
+#	                           root field
+#
+# THE TYPING IS SEQUENCED LIKE THE INSTALLER'S USERS PAGE: `type` with a gap, then Return, because
+# this console echoes nothing and a password sent faster than it can read is a password that lost
+# characters.
+#
+# IF THIS FAILS, THE MESSAGE IS THE ANSWER: a wrong root password, a prompt that never appeared, or
+# an `usermod` that still refuses. Each is a different line in this log, which is why the step is
+# named for what it establishes rather than for what it types.
+step "type root at the login prompt"
+  input text root
+  type_gap 0.1
+  settle 2
 
 
-# THE DESKTOP IS WHAT THIS STAGE ADDS, AND IT IS INSTALLED AS ROOT BECAUSE ROOT IS THE ADMINISTRATOR.
+step "take the login name"
+  input ret
+  settle 6
+
+
+step "type the root password at the console"
+  input text "{{ password }}"
+  type_gap 0.1
+  settle 2
+
+
+step "take the root password"
+  input ret
+  settle 8
+
+
+step "read the console"
+  read
+    name console
+
+
+step "prove the console is a root shell"
+  check
+    source console
+    mode text
+    rect [0, 0, 1920, 200]
+    rect_at [1920, 1080]
+    words [[root]]
+    name console_is_root
+
+
+# THE AUTHORIZATION IS FOR `pkg` SPECIFICALLY, BECAUSE THAT IS WHAT REFUSED IT.
 #
-# NO `pfexec`, NO `sudo -S`, NO PASSWORD PIPE. The session this step runs in is already root - see the
-# `ssh_user root` paragraph at the top of this file for the three runs that established the account
-# the installer leaves behind cannot change the system - so the command is the command.
+# `pkg` needs `solaris.admin.packager`; `usermod -A` appends one authorization without touching the
+# ones the installer already put there. `-P` would replace the profile list, which is not what is
+# wanted here - the account already has what it needs to be a desktop user.
+step "grant the packager authorization from the console"
+  input text "usermod -A +solaris.admin.packager {{ user }}"
+  type_gap 0.1
+  settle 2
+
+
+step "run the grant"
+  input ret
+  settle 5
+
+
+step "prove a fresh session carries the authorization"
+  ssh "auths"
+  timeout 60
+
+
+# THE DESKTOP IS WHAT THIS STAGE ADDS, AND IT IS INSTALLED AS THE ACCOUNT THE INSTALLER CREATED.
 #
 # `--accept`, NOT `-y`, AND THE FIRST RUN IS WHAT SAID SO. MEASURED on run 45613187768:
 #
@@ -126,7 +174,7 @@ step "the administrator session is root"
 # THE TIMEOUT IS LONG BECAUSE `pkg` RESOLVES AGAINST THE NETWORK. Ninety minutes is the ceiling a
 # leg has, not an expectation.
 step "install the desktop"
-  ssh "pkg install --accept --licenses solaris-desktop"
+  ssh "pfexec pkg install --accept --licenses solaris-desktop"
   timeout 5400
 
 
@@ -141,7 +189,7 @@ step "the display manager is the one that starts"
 
 
 step "enable the display manager at boot"
-  ssh "svcadm enable svc:/application/graphical-login/gdm:default"
+  ssh "pfexec svcadm enable svc:/application/graphical-login/gdm:default"
   timeout 180
 
 
@@ -172,12 +220,12 @@ step "the desktop is on screen"
 
 
 step "flush the writes before anything else"
-  ssh "sync"
+  ssh "pfexec sync"
   timeout 300
 
 
 step "flush the writes before the machine stops"
-  ssh "sync"
+  ssh "pfexec sync"
   timeout 300
 
 
