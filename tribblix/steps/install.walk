@@ -147,10 +147,31 @@ step "the password"
 
 step "shell"
   input ret
+  settle 10
+
+
+# THE SHELL IS PROVEN WITH A MARKER IT HAS TO COMPUTE, NOT WITH THE PROMPT ITSELF.
+#
+# MEASURED on CI run 45631079665: the prompt WAS on screen - `root@tribblix:/root#`, a complete
+# login - and the gate `words [[root@tribblix]]` still never matched across forty attempts over five
+# minutes. The frame's text reads back the keyboard list above it and the prompt's `@` and `:/root#`
+# are exactly the characters a text read mangles, so a gate on that string is a gate on the OCR's
+# spelling rather than on the system.
+#
+# SO THE WALK TYPES A COMMAND WHOSE OUTPUT CANNOT BE PRODUCED BY TYPING IT: `echo READY-$((6*7))`
+# echoes as `READY-$((6*7))` and PRINTS `READY-42`. A screen still at a login prompt echoes the line
+# but never evaluates it, so `READY-42` appearing is proof that a shell ran it.
+step "prove the shell evaluates a command"
+  input text "echo READY-$((6*7))"
+  settle 2
+
+
+step "run it"
+  input ret
   settle 8
 
 
-step "root's shell is up"
+step "the shell answered with the computed value"
   repeat
     do
       item
@@ -165,24 +186,40 @@ step "root's shell is up"
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
       scale 1
-      words [[root@tribblix]]
+      words [[READY-42]]
     max 40
 
 
-# THE DISK IS ASKED FOR BY ITS OWN NAME AND THE ANSWER IS READ BACK. `format </dev/null` lists the
-# devices and exits; its "AVAILABLE DISK SELECTIONS" block is the measured truth this walk installs
-# against, so a machine that presents a different device name cannot silently install to nothing.
-step "ask format which disks there are"
-  input text "format </dev/null 2>&1 | tail -12"
+# THE DISK IS ASKED FOR WITH A QUESTION THE SHELL ANSWERS, NOT WITH A TOOL THAT PRINTS A PATH.
+#
+# TWO MEASUREMENTS DECIDE THIS SHAPE, AND EACH KILLED A PREVIOUS VERSION:
+#
+# 1  `format </dev/null` DOES NOT EXIT. MEASURED: it prints `AVAILABLE DISK SELECTIONS` and stops at
+#    `Specify disk (enter its number):`, so the install line typed next would be eaten as an invalid
+#    disk number.
+#
+# 2  `ls /dev/rdsk/*s2` exits and prints `/dev/rdsk/c1t0d0s2`, and a text read of that frame still
+#    did not match `c1t0d0s2` - the slashes and the lowercase run are exactly what a frame read
+#    mangles, the same way `root@tribblix` failed to match on CI.
+#
+# SO THE SCREEN IS NOT ASKED TO SPELL ANYTHING. The shell tests the device node and prints one
+# uppercase word: `DISK-OK` when `/dev/rdsk/c1t0d0s2` is there, `DISK-MISSING` when it is not. A run
+# on a machine whose virtio disk presents under another name fails here, before the installer is
+# typed, rather than installing to nothing.
+#
+# THE TWO WORDS ARE THE TWO ANSWERS, so this cannot pass on the question - the command line on the
+# screen contains neither.
+step "ask the shell whether the virtio disk's whole-disk slice is there"
+  input text "test -e /dev/rdsk/c1t0d0s2 && echo DISK-OK || echo DISK-MISSING"
   settle 2
 
 
 step "run it"
   input ret
-  settle 15
+  settle 12
 
 
-step "the virtio disk is c1t0d0"
+step "the virtio disk is c1t0d0 and it is there"
   repeat
     do
       item
@@ -197,7 +234,8 @@ step "the virtio disk is c1t0d0"
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
       scale 1
-      words [[Virtio-Block, Device], [c1t0d0]]
+      words [[DISK-OK]]
+      without [DISK-MISSING]
     max 40
 
 
