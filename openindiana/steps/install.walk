@@ -768,25 +768,35 @@ step "the root role was assumed"
 #
 # `( ... ) &` PUTS THE WHOLE THING IN A SUBSHELL THAT RETURNS AT ONCE, and the exit status lands in
 # the file when it finishes. The shell is free from the first second, and the status is still recorded.
-step "write the install as a script"
-  input text "printf '%s\\n' '( pkg install --accept --deny-new-be mate_install > /tmp/pkg.log 2>&1; echo PKG_EXIT=$? > /tmp/pkg.exit ) &' > /tmp/as.sh"
-  type_gap 0.05
-  settle 4
-
-
-step "finish the script"
-  input ret
-  settle 6
-
-
-step "install the desktop in the root shell"
-  input text "sh /tmp/as.sh"
-  settle 4
+# THE INSTALL IS ONE SHORT BACKGROUND COMMAND, NOT A WRITTEN SCRIPT, AND THE MEASUREMENT IS WHY.
+#
+# MEASURED on run 45718833057: the screen froze showing the `printf` line that was meant to WRITE the
+# script, with the cursor at its end and nothing executed - so `sh /tmp/as.sh` never ran, `pkg` never
+# started, and the display-manager gate waited on a machine that had done nothing. That line was 120
+# characters with nested quotes and a backslash, and this console loses keystrokes and Returns on
+# lines that long: the same failure that made the 107-character pkg line sit unexecuted on
+# 45713558013.
+#
+# SO THERE IS NO SCRIPT. The command is the install itself, in the background, and it is 64
+# characters with no quoting at all:
+#
+#	pkg install --accept --deny-new-be mate_install > /tmp/pkg.log 2>&1 &
+#
+# THE TRAILING `&` IS NOT COSMETIC: a foreground `pkg` takes the shell for forty minutes, so no later
+# step could type into it. Backgrounded, the prompt comes straight back and the gates below poll for
+# the result.
+#
+# THE EXIT STATUS IS NOT WRITTEN BY THIS LINE - a backgrounded command's `$?` is the `&`'s. The gate
+# is the DESKTOP FILE, asked directly, which is the fact this whole stage is for.
+step "start the install in the background"
+  input text "pkg install --accept --deny-new-be mate_install > /tmp/pkg.log 2>&1 &"
+  type_gap 0.08
+  settle 5
 
 
 step "run the install"
   input ret
-  settle 15
+  settle 20
 
 
 # THE LICENCE PAGE, ANSWERED UNTIL IT IS GONE. `PKG_EXIT` CANNOT APPEAR WHILE A PROMPT IS WAITING, so
@@ -903,8 +913,8 @@ step "answer the licence pages until the install proceeds"
 step "wait for the install to finish"
   repeat
     do
-      item "ask the file whether the install is done"
-        input text "clear; cat /tmp/pkg.exit 2>/dev/null"
+      item "ask the disk whether the session file is there yet"
+        input text "clear; [ -f /usr/share/xsessions/mate.desktop ] && echo MATE_SESSION_OK || echo MATE_SESSION_WAIT"
         settle 3
       item "press return on its own"
         input ret
@@ -918,7 +928,7 @@ step "wait for the install to finish"
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      words [[PKG_EXIT]]
+      words [[MATE_SESSION_OK]]
     max 300
 
 
