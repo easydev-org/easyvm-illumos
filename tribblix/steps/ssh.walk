@@ -1,8 +1,7 @@
 # TRIBBLIX 0m41.1 OVER SSH - the administrator logs in, and the desktop is proven from outside.
 #
 # THIS IS THE STAGE THAT ANSWERS A QUESTION THE INSTALL LEG CANNOT: does the disk it published reach
-# a shell over the NETWORK, and is there a session behind it? Nothing here is answered from the
-# console except where the console is the only place a thing can be done, and that is called out.
+# a shell over the NETWORK, and is there a session behind it?
 #
 # TRIBBLIX'S ADMINISTRATOR IS `root` AND IT IS A REAL ACCOUNT, NOT A ROLE.
 #
@@ -10,12 +9,28 @@
 # cannot log in at all and the whole stage has to assume it from the installer's `vmuser`. MEASURED
 # here: the live system's own `root`/`tribblix` logs in directly at the console, and `live_install.sh`
 # copies `/etc/shadow` into the new boot environment as part of "copy the minimum that defines the
-# system's identity" - which is what the project's `over_install.sh` documentation describes. So the
-# installed disk answers `root` with the same password the medium did.
+# system's identity". So the installed disk answers `root` with the same password the medium did.
 #
-# THE CLEAN HOST KEY IS DELIBERATE AND NOT A SHORTCUT. `ssh_user root` plus `password {{ password }}`
-# with `password` set to `tribblix` is what the daemon uses for its own probe; nothing here has to
-# accept a host key by hand.
+# ROOT CANNOT LOG IN OVER THE NETWORK UNTIL THIS STAGE SAYS SO, AND THAT IS MEASURED, NOT ASSUMED.
+#
+# The first run of this stage (45640211235) waited sixty rounds for sshd and failed with
+# `sshd does not accept a connection`. The frame at the end of that run explained it in one line of
+# the system's own log:
+#
+#	tribblix sshd-session[1155]: error: PAM: Authentication failed for root from 172.30.0.1
+#
+# - sshd WAS up and WAS reachable, and REFUSED root's password. The reason is in the shipped config:
+#
+#	# grep -i permitrootlogin /etc/ssh/sshd_config
+#	PermitRootLogin without-password
+#
+# So root may log in with a KEY and never with a password. THE CONSOLE IS WHERE THIS IS CHANGED,
+# because it is the one channel that authenticates root already: log in there, set
+# `PermitRootLogin yes`, restart sshd, and only then does the network accept a password.
+#
+# THE CONSOLE STEP IS ALSO WHY `machine_ssh` CANNOT BE WAITED ON FIRST. `stage.yml`'s own probe uses
+# the same password the walk does, so the daemon's verdict is "not ready" until the config has been
+# changed - waiting for it before this step would wait for the effect of a change not yet made.
 walkthrough "tribblix 0m41.1 - sshd, the desktop it already has, and a shutdown"
 resolution 1920x1080
 recording_resolution 1920x1080
@@ -36,8 +51,143 @@ step "boot the installed disk"
     timeout 900
 
 
-# THE DAEMON PROBES sshd ON ITS OWN TICKER, so this waits for its verdict rather than for a console
-# line: Tribblix's sshd logs to `/var/adm/messages`, not to the 1024x768 console this walk can see.
+step "the console login prompt is up"
+  repeat
+    do
+      item
+        settle 10
+      item "read the screen"
+        read
+          name login
+    until
+      bind up
+      source login
+      mode text
+      rect [0, 0, 1920, 1080]
+      rect_at [1920, 1080]
+      words [[tribblix, console, login]]
+    max 60
+
+
+# THE CONSOLE IS THE ONLY CHANNEL THAT ALREADY AUTHENTICATES root, so the config change happens here.
+step "log in at the console as root"
+  input text "root"
+  settle 2
+
+
+step "take the login name"
+  input ret
+  settle 6
+
+
+step "type root's password"
+  input text "tribblix"
+  type_gap 0.1
+  settle 2
+
+
+step "take the password"
+  input ret
+  settle 10
+
+
+# THE MARKER IS COMPUTED BY THE SHELL, NOT READ OFF THE PROMPT. MEASURED on the install stage's CI
+# run: `root@tribblix` never matched although the prompt was plainly on screen, because `@` and
+# `:/root#` are exactly what a frame read mangles. `READY-42` cannot be produced by echoing the
+# command that asks for it.
+step "prove the console is a root shell"
+  input text "echo READY-$((6*7))"
+  settle 2
+
+
+step "run it"
+  input ret
+  settle 8
+
+
+step "the shell answered with the computed value"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name shell
+    until
+      bind up
+      source shell
+      mode text
+      rect [0, 0, 1920, 1080]
+      rect_at [1920, 1080]
+      words [[READY-42]]
+    max 40
+
+
+# THE SHIPPED CONFIG SAYS `PermitRootLogin without-password`, WHICH REFUSES THE PASSWORD THIS STAGE'S
+# OWN PROBE USES. The `sed` is a whole-file rewrite of that one directive rather than an append,
+# because sshd takes the FIRST match it meets and an appended line after the original would lose.
+#
+# AND THERE IS A SECOND LOCK, IN A DIFFERENT FILE, WHICH IS WHY THE FIRST FIX ALONE WAS NOT ENOUGH.
+# MEASURED on the disk this consumes, in the root shell:
+#
+#	# grep -E '^CONSOLE|^ROOT|^PATH' /etc/default/login
+#	CONSOLE=/dev/console
+#
+# `CONSOLE=` is the illumos/Solaris rule that root may log in ONLY on the named device - sshd is not
+# it, so root's ssh login is refused before sshd's own `PermitRootLogin` is even consulted. Clearing
+# the value (`CONSOLE=`) is the documented way to lift it, and it is what the `sed` below does.
+#
+# BOTH ARE SET IN ONE COMMAND AND BOTH ARE READ BACK. A single `ROOTLOGIN-ON` means the `ssh`
+# service is running with a config that allows a password for root AND a login file that does not
+# pin root to the console - the two facts this stage's first run lacked.
+step "let root log in with a password, from any terminal"
+  input text "sed 's/^PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config > /etc/ssh/sshd_config.new && mv /etc/ssh/sshd_config.new /etc/ssh/sshd_config; sed 's|^CONSOLE=.*|CONSOLE=|' /etc/default/login > /etc/default/login.new && mv /etc/default/login.new /etc/default/login; grep -q '^PermitRootLogin yes' /etc/ssh/sshd_config && grep -q '^CONSOLE=$' /etc/default/login && echo ROOTLOGIN-ON || echo ROOTLOGIN-OFF"
+  type_gap 0.02
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 10
+
+
+# THE WITNESS IS A WORD THE SHELL CHOOSES, NOT THE DIRECTIVE'S TEXT.
+#
+# The `grep -q` above answers only in exit status, and the command line printed on screen ends in
+# `echo ROOTLOGIN-ON || echo ROOTLOGIN-OFF` - so neither word appears in it. `ROOTLOGIN-ON` on screen
+# therefore means the test passed: the file now carries exactly the directive sshd needs to accept
+# root's password.
+step "the directive is in place"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name count
+    until
+      bind up
+      source count
+      mode text
+      rect [0, 0, 1920, 1080]
+      rect_at [1920, 1080]
+      words [[ROOTLOGIN-ON]]
+      without [ROOTLOGIN-OFF]
+    max 40
+
+
+step "restart sshd so the new directive is read"
+  input text "svcadm restart ssh; svcs -H -o state ssh"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 12
+
+
+# NOW, AND ONLY NOW, DOES THE DAEMON'S OWN PROBE HAVE A CHANCE: sshd has been restarted with root's
+# password login allowed, so `machine_ssh` is the right thing to wait on.
 step "wait for sshd"
   repeat
     until machine_ssh
@@ -71,9 +221,6 @@ step "prove the desktop overlay is on the disk"
 # MEDIUM - no network, no `pkg` run, no ninety-minute step. MEASURED: `/usr/share/xsessions` on a disk
 # this install produced holds `xfce.desktop`, and the session's display manager is `slim`, which the
 # smoke stage's own boot showed starting `svc:/system/slim:default`.
-#
-# SO THIS STAGE ENABLES RATHER THAN INSTALLS, and the enable happens in the root shell over ssh,
-# which is a real account here - the thing OpenIndiana's stage has to do at the console.
 step "enable the display manager"
   ssh "svcadm enable -r svc:/system/slim:default; echo DM_EXIT=$?"
   timeout 300
@@ -86,10 +233,6 @@ step "the display manager reports online"
 
 # THE SAME PICTURE GATE THE REST OF THIS REPOSITORY USES. A display manager that is online and a
 # session on screen are two different facts, and only the frame can tell them apart.
-#
-# THE WORDS ARE XFCE'S OWN. MEASURED: Tribblix's Xfce session draws its panel with the Applications
-# menu at the top left of the 1920x1080 frame, which is the same anchor OpenIndiana's MATE session
-# uses - so the gate is the same word for the same reason.
 step "the desktop is on screen"
   repeat
     do

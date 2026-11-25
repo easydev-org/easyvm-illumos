@@ -1,4 +1,4 @@
-walkthrough "openindiana 2026.10 - sshd, a desktop, and a graceful shutdown"
+walkthrough "openindiana 2026.10 - sshd, the installed desktop, and a graceful shutdown"
 resolution 1920x1080
 recording_resolution 1920x1080
 # ROOT IS A ROLE ON THIS SYSTEM, NOT AN ACCOUNT, AND THAT IS WHY FOUR RUNS FAILED.
@@ -109,262 +109,20 @@ step "prove the boot environment is the one that was installed"
 # EACH KEYSTROKE GROUP IS ITS OWN STEP WITH A SETTLE, because a console echoes no password and gives
 # no newline until Return. The checks read the SCREEN rather than matching a word that the prompt
 # itself contains - the 368f6db run's `words [[root]]` passed on the login prompt's own text.
-step "log in at the console as the account that exists"
-  input text "{{ user }}"
-  type_gap 0.1
-  settle 2
-
-
-step "take the login name"
-  input ret
-  settle 6
-
-
-step "type the account password"
-  input text "{{ password }}"
-  type_gap 0.1
-  settle 2
-
-
-step "take the password"
-  input ret
-  settle 10
-
-
-step "read what the console says after logging in"
-  read
-    name after_login
-
-
-step "the console is a shell, not a refusal"
-  check
-    source after_login
-    mode text
-    rect [0, 0, 1920, 400]
-    rect_at [1920, 1080]
-    words [[$]]
-    without [incorrect, "Permission denied"]
-    name console_shell
-
-
-step "assume the root role"
-  input text "su -"
-  type_gap 0.1
-  settle 2
-
-
-step "send the role request"
-  input ret
-  settle 6
-
-
-step "type the root role password"
-  input text "{{ password }}"
-  type_gap 0.1
-  settle 2
-
-
-step "take the role password"
-  input ret
-  settle 10
-
-
-step "read what the console says after su"
-  read
-    name after_su
-
-
-# THE PROOF IS THE LINE `su` ITSELF PRINTS, WHICH THE 7f0459b CONSOLE SHOWS VERBATIM:
+# THE DESKTOP IS ALREADY INSTALLED - IT WAS THIS REPOSITORY'S INSTALL STAGE THAT PUT IT THERE.
 #
-#	Nov 25 13:09:33 openindiana su: 'su root' succeeded for vmuser on /dev/console
-#	root@openindiana:~#
+# MEASURED on four runs of the stage this file used to carry: the console login, the `su -` role
+# assumption and the `pkg install mate_install` all work, and they belong one stage earlier. A stage
+# called "ssh" that spends an hour installing a desktop is a stage whose name is wrong, and it also
+# meant the install leg published a disk that boots to a text login and nothing else.
 #
-# `root@` IS THE SHELL'S OWN PROMPT for the assumed identity, which is a fact about the session
-# rather than about the word "root" appearing somewhere on the screen - the mistake the 368f6db run's
-# check made when it matched the login prompt's own text.
-step "the root role was assumed"
-  check
-    source after_su
-    mode text
-    rect [0, 0, 1920, 1080]
-    rect_at [1920, 1080]
-    without [incorrect, "Permission denied", "can only be assumed", "not a valid"]
-    words [["root@openindiana"]]
-    name role_assumed
-
-
-# THE AUTHORIZATION IS GRANTED IN THE CONSOLE'S ROLE AND PROVEN OVER SSH.
-#
-# Both halves are needed: `usermod` must run with privilege, which only the assumed role has, and the
-# result must be visible to a NEW ssh session, which is where `pkg` runs. Doing the grant over the
-# console and the proof over ssh also keeps the two independent - a session that inherited the
-# authorization could not be evidence that it was granted.
-# THE GRANT IS A PROFILE, NOT AN AUTHORIZATION NAME, AND THE CONSOLE SAID SO IN ONE LINE.
-#
-# MEASURED on the 7f0459b run, in the assumed root shell:
-#
-#	root@openindiana:~# usermod -A +solaris.admin.packager vmuser
-#	UX: usermod: ERROR: +solaris.admin.packager is not a valid authorization.  Choose another.
-#
-# `-A` takes a name from `/etc/security/auth_attr`; `solaris.admin.packager` is the AUTHORIZATION a
-# package operation checks, but it is not itself declared as a login authorization. What `pkg`
-# really wants is the PROFILE that carries it, and illumos names that one `Solaris Package Manager`.
-#
-# `-P +"Solaris Package Manager"` APPENDS the profile and leaves the ones the installer already set
-# alone - the same `+` semantics `-A` has, on the other list.
-#
-# THE NAME IS PRINTED FROM THIS SYSTEM RATHER THAN ONLY TRUSTED. If the profile were called something
-# else, the line before the grant would show it, and `usermod` would name the replacement - which is
-# exactly how the run above got from a wrong authorization name to this one.
-# THIS SYSTEM HAS NO PACKAGE PROFILE TO GRANT, AND THE CONSOLE SAID SO IN TWO LINES.
-#
-# MEASURED on the 49e152e run, in the assumed root shell:
-#
-#	root@openindiana:~# grep -i package /etc/security/prof_attr
-#	root@openindiana:~#                                   <- NO OUTPUT
-#	root@openindiana:~# usermod -P +'Solaris Package Manager' vmuser
-#	UX: usermod: ERROR: +Solaris Package Manager is not a valid profile name.  Choose another.
-#
-# AND `profiles` FOR THE ACCOUNT DID NOT GAIN IT EITHER:
-#
-#	Console User, Suspend To RAM, Suspend To Disk, Brightness, CPU Power Management,
-#	Network Autoconf User, Basic Solaris User, All
-#
-# `Solaris Package Manager` IS A SOLARIS 11 PROFILE AND THIS IS NOT SOLARIS 11. OpenIndiana Hipster
-# ships IPS without a profile named for it, so there is nothing to grant and no authorization name to
-# append - the two previous attempts failed on exactly that, from opposite directions.
-#
-# SO THE PACKAGE OPERATION RUNS IN THE ROOT SHELL, WHICH IS THE ONE PLACE ON THIS SYSTEM IT IS
-# PROVEN TO WORK. `su -` already succeeded and the prompt is `root@openindiana:~#`. Running `pkg`
-# there is not a workaround - it is the privileged context this disk actually has.
-#
-# THE RISK IS THE RECORDING, NOT THE COMMAND: a 90-minute `pkg` run holds the console, so the step's
-# own output is the only thing the log will show. That is acceptable here because `pkg` writes its
-# progress to the terminal this step is typing into.
-#
-# AND THE PROOF MOVES TO WHERE IT BELONGS: `pkg` EXITS NON-ZERO IF IT COULD NOT INSTALL, and the
-# desktop's own session file is then checked over ssh - which is a fact about the system rather than
-# about a name in an authorization list.
-#
-# `mate_install` AND `lightdm`, NOT `solaris-desktop` AND `gdm`, AND THREE RUNS ARE WHAT SAID SO.
-# OpenIndiana's own handbook, under "Installing OpenIndiana", gives the two commands this stage
-# needs:
-#
-#	pkg install mate_install
-#	svcadm enable -r /application/graphical-login/lightdm
-#
-# MATE IS THIS DISTRIBUTION'S DEFAULT DESKTOP; `solaris-desktop` is a Solaris 11 group with no
-# equivalent here, and `gdm` is not the display manager it ships. MEASURED: three runs installed
-# `solaris-desktop` successfully - `pkg` returned 0 - and `/usr/share/xsessions/gnome.desktop` was
-# still absent afterwards, because nothing had been installed under that name at all.
-#
-# `yes |` AND A LOG FILE, BECAUSE `pkg` ASKS A QUESTION THE CONSOLE CANNOT SEE THE END OF.
-#
-# MEASURED on run 45630040587, which waited properly and then read `PKG_EXIT=1`: the screen held an
-# entire licence agreement - `LOSS OF GOODWILL, WORK STOPPAGE...`, `OR CONSEQUENTIAL DAMAGES` - so
-# `pkg` had stopped to ask whether the terms were accepted and refused on its own timeout. The console
-# is a screen this walk types at, not a terminal a person scrolls, so a prompt hundreds of lines down
-# cannot be answered there.
-#
-# `yes` ANSWERS IT, and `--accept` still carries "do not ask me to confirm the install". Redirection to
-# a file keeps that agreement out of the recording, and `tail -5` puts the part that matters - the last
-# five lines of the real outcome - back on the console where the exit line is read from.
-# `-r` ON THE ENABLE IS NOT OPTIONAL: it restarts the service and the ones that depend on it, which is
-# what makes lightdm actually come up rather than record that it should.
-step "install the desktop in the root shell"
-  input text "yes | pkg install --accept --licenses mate_install > /tmp/pkg.log 2>&1; echo PKG_EXIT=$?; tail -5 /tmp/pkg.log"
-  type_gap 0.05
-  settle 3
-
-
-step "run the install"
-  input ret
-  settle 10
-
-
-# THE EXIT LINE IS WAITED FOR, NOT INSPECTED ONCE, AND THE FIRST RUN IS WHAT SAID SO.
-#
-# MEASURED on the run before this one: the console at t=255 - the last frame before the step was
-# abandoned - still read
-#
-#	root@openindiana:~# pkg install --accept --licenses mate_install; echo PKG_EXIT=$?
-#
-# with the prompt still at the end of the line. The command had been TYPED and the Return had not
-# taken effect yet, so a `check:` placed straight after it read the boot text still on the screen and
-# answered `none of "PKG_EXIT=0" found`. A settle cannot fix that: how long `pkg` takes depends on the
-# network, which is the whole reason it needs a budget rather than a pause.
-#
-# SO THIS IS A LOOP WITH A CEILING: it reads the screen until the line appears or ninety minutes pass.
-#
-# AND IT WAITS FOR `PKG_EXIT=0` AND NOT FOR `PKG_EXIT`, WHICH IS A MISTAKE THIS WALK ALREADY MADE. The
-# word `PKG_EXIT` is IN THE COMMAND ITSELF - `... mate_install; echo PKG_EXIT=$?` - so a gate that
-# looked for it passed on the FIRST attempt, 20 seconds in, while the console still read
-#
-#	root@openindiana:~# pkg install --accept --licenses mate_install; echo PKG_EXIT=$?
-#	Refreshing catalog 1/1 openindiana.org 53.76 MB|
-#
-# and the run then judged a value the shell had not printed yet. A DIGIT AFTER `PKG_EXIT=` only exists
-# once the shell has spoken, because the command line spells it `PKG_EXIT=$?`.
-#
-# THE EXIT CODES ARE LISTED RATHER THAN "ANY DIGIT" because a text gate matches words, not patterns.
-# `pkg` answers 0 on success and non-zero on every refusal this stage has already met - an unprivileged
-# install, an unknown package, a failed catalog refresh - so the list is the four a failure takes, and
-# a code outside it would mean the shell itself did not run, which is its own finding.
-step "wait for the install to finish"
-  repeat
-    do
-      item
-        settle 20
-      item "read the screen"
-        read
-          name after_pkg
-    until
-      bind done
-      source after_pkg
-      mode text
-      rect [0, 0, 1920, 1080]
-      rect_at [1920, 1080]
-      words [[PKG_EXIT=0], [PKG_EXIT=1], [PKG_EXIT=2], [PKG_EXIT=4]]
-    max 270
-
-
-step "the install reported success"
-  check
-    source after_pkg
-    mode text
-    rect [0, 0, 1920, 1080]
-    rect_at [1920, 1080]
-    words [[PKG_EXIT=0]]
-    name pkg_ok
-
-
-step "prove the session is installed"
-  ssh "ls -l /usr/share/xsessions/mate.desktop"
-  timeout 120
-
-
-# THE DISPLAY MANAGER IS ENABLED IN THE SAME ROOT SHELL, FOR THE SAME REASON THE INSTALL WAS.
-# `pfexec svcadm enable` from vmuser's session is another command the account is not entitled to run -
-# the 49e152e run showed `pfexec` reaching nothing it did not already own.
-step "enable the display manager in the root shell"
-  input text "svcadm enable -r svc:/application/graphical-login/lightdm:default; echo DM_EXIT=$?"
-  type_gap 0.05
-  settle 3
-
-
-step "run the enable"
-  input ret
-  settle 10
-
-
-step "the display manager reports online"
+# SO THIS STAGE ASKS THE ONE QUESTION IT IS NAMED FOR: does a remote shell reach the installed system,
+# and is the desktop the install leg put behind it actually up?
+step "the session is the one the install stage left"
   ssh "svcs -H -o state svc:/application/graphical-login/lightdm:default"
   timeout 180
 
 
-# A DISPLAY MANAGER THAT IS ONLINE AND A GNOME SESSION ARE TWO DIFFERENT FACTS, and this system is
-# slow enough to reach the second one minutes after the first. The screen is the only thing that can
-# tell them apart, so the walk looks at it - the same picture gate every other desktop wait here uses.
 step "the desktop is on screen"
   repeat
     do
@@ -381,6 +139,7 @@ step "the desktop is on screen"
       rect_at [1920, 1080]
       words [["Applications"]]
     max 60
+
 
 
 step "flush the writes before anything else"
