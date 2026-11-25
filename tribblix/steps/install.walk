@@ -95,16 +95,25 @@ step "the keyboard question is on screen"
     max 90
 
 
-step "US-English, the default 47"
-  input ret
-  settle 15
-
-
+# THE KEYBOARD ANSWER IS RETRIED, NOT PRESSED ONCE, AND A CI RUN IS WHAT SAID SO.
+#
+# MEASURED on run 45628851250, the first CI attempt at this stage: a single `ret` was sent, and by
+# step 11 the screen still read `1, Albanian 25, Latin-American 2, Arabic 26, ...` - the keyboard
+# list - with every later login keystroke absorbed as an invalid choice. The keypress had been
+# delivered before the list was ready to take it, which is a race a local run does not always lose.
+#
+# SO THIS IS A LOOP: settle, press `ret`, look for the login prompt, and press again if it is not
+# there yet. PRESSING `ret` AT A LOGIN PROMPT IS HARMLESS - it draws the prompt again and nothing
+# else - so the retry cannot overshoot once the login has arrived.
+#
+# THE WITNESS IS THE PROMPT'S OWN TEXT, `tribblix console login:`, which only the live system prints.
 step "the live system has reached its login"
   repeat
     do
       item
-        settle 10
+        settle 15
+      item "take the default keyboard, or redraw the login prompt"
+        input ret
       item "read the screen"
         read
           name login
