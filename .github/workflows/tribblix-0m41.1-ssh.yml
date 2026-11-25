@@ -35,6 +35,21 @@ jobs:
     with:
       image_repository: easydev-org/easyvm
       image_tag: v0.0.4
+      # THE GUEST'S PASSWORD IS `tribblix`, AND IT HAS TO BE NAMED HERE OR THE PROBE USES `admin`.
+      #
+      # MEASURED, and this is what five runs of this stage failed on: `easyvm run` declares
+      # `--password` with a default of `admin` and ALWAYS sends it, so a walk that says
+      # `password tribblix` is overridden by the flag before the daemon ever reads the file. The
+      # daemon then probes sshd as `admin`, sshd answers
+      #
+      #	tribblix sshd-session[...]: error: PAM: Authentication failed for root from 172.30.0.1
+      #
+      # once a minute while the console of the same machine answered `root`/`tribblix` and
+      # `ssh root@127.0.0.1 echo HELLO` from inside the guest printed `HELLO`.
+      #
+      # `stage.yml` documents the same trap for opensuse-leap-16.1 and passes the caller's value
+      # through only when one is given - so this is the one place to give it.
+      password: tribblix
       # THE DESKTOP IS ALREADY ON THE DISK - the install leg ran `desktop` - so this leg adds no
       # packages, and the budget covers the pulled disk, the session coming up and the compressed
       # result. `disk_gb` is a budget, not the disk's virtual size.
