@@ -803,7 +803,25 @@ step "wait for the install to finish"
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      words [[PKG_EXIT=0], [PKG_EXIT=1], [PKG_EXIT=2], [PKG_EXIT=4]]
+      # `PKG_EXIT` RATHER THAN `PKG_EXIT=0`, BECAUSE THIS CONSOLE'S OCR CANNOT READ A ZERO.
+      #
+      # MEASURED on run 45694800660. The install SUCCEEDED - its last frame reads, on the screen:
+      #
+      #	Creating fast lookup database        Done
+      #	PKG_EXIT=0
+      #	root@openindiana:~#
+      #
+      # and the same frame, as this walk's own reader saw it, reads:
+      #
+      #	SUNW-MSG-I0: SMF-S8a8-YX, TYPE: defect, VER: 1, SEVERITY: majar
+      #
+      # `SUNW-MSG-ID` -> `I0`, `SMF-8000-YX` -> `S8a8-YX`, `major` -> `majar`. ZERO AND THE LETTER O ARE
+      # THE SAME GLYPH to this reader, so `PKG_EXIT=0` can never match and the loop ran all 120 attempts
+      # with the answer sitting on the screen.
+      #
+      # `PKG_EXIT` HAS NO DIGIT IN IT. It appears once in this session: the command that prints it was
+      # typed after a `clear`, so no echo of it survives to be confused with the result.
+      words [[PKG_EXIT]]
     # THE LOOP AND THE JOB HAVE TO AGREE ON THE CEILING, AND THEY DID NOT.
     #
     # `max 270` AT 20 SECONDS IS NINETY MINUTES, and the job's `timeout:` was 120 - of which the
@@ -815,14 +833,13 @@ step "wait for the install to finish"
     max 120
 
 
-step "the install reported success"
-  check
-    source after_pkg
-    mode text
-    rect [0, 0, 1024, 768]
-    rect_at [1024, 768]
-    words [[PKG_EXIT=0]]
-    name pkg_ok
+# THE EXIT CODE IS NOT RE-READ HERE, AND THE ZERO IS WHY. `PKG_EXIT=0` cannot be matched by this
+# console's reader (see the note in the wait above), and a check that repeats an unreadable word adds a
+# failure without adding evidence.
+#
+# THE PROOF IS THE NEXT STEP AND IT IS A BETTER ONE: it asks the PUBLISHED SYSTEM, over scp/ssh,
+# whether `mate.desktop` exists. That is a fact about the disk rather than about a line of console
+# output, and it cannot be satisfied by a command that never ran.
 
 
 step "prove the session is installed"
