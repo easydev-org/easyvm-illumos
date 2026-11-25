@@ -245,8 +245,23 @@ step "the root role was assumed"
 # AND THE PROOF MOVES TO WHERE IT BELONGS: `pkg` EXITS NON-ZERO IF IT COULD NOT INSTALL, and the
 # desktop's own session file is then checked over ssh - which is a fact about the system rather than
 # about a name in an authorization list.
+#
+# `mate_install` AND `lightdm`, NOT `solaris-desktop` AND `gdm`, AND THREE RUNS ARE WHAT SAID SO.
+# OpenIndiana's own handbook, under "Installing OpenIndiana", gives the two commands this stage
+# needs:
+#
+#	pkg install mate_install
+#	svcadm enable -r /application/graphical-login/lightdm
+#
+# MATE IS THIS DISTRIBUTION'S DEFAULT DESKTOP; `solaris-desktop` is a Solaris 11 group with no
+# equivalent here, and `gdm` is not the display manager it ships. MEASURED: three runs installed
+# `solaris-desktop` successfully - `pkg` returned 0 - and `/usr/share/xsessions/gnome.desktop` was
+# still absent afterwards, because nothing had been installed under that name at all.
+#
+# `-r` ON THE ENABLE IS NOT OPTIONAL: it restarts the service and the ones that depend on it, which is
+# what makes lightdm actually come up rather than record that it should.
 step "install the desktop in the root shell"
-  input text "pkg install --accept --licenses solaris-desktop; echo PKG_EXIT=$?"
+  input text "pkg install --accept --licenses mate_install; echo PKG_EXIT=$?"
   type_gap 0.05
   settle 3
 
@@ -261,7 +276,7 @@ step "run the install"
 # MEASURED on the run before this one: the console at t=255 - the last frame before the step was
 # abandoned - still read
 #
-#	root@openindiana:~# pkg install --accept --licenses solaris-desktop; echo PKG_EXIT=$?
+#	root@openindiana:~# pkg install --accept --licenses mate_install; echo PKG_EXIT=$?
 #
 # with the prompt still at the end of the line. The command had been TYPED and the Return had not
 # taken effect yet, so a `check:` placed straight after it read the boot text still on the screen and
@@ -300,7 +315,7 @@ step "the install reported success"
 
 
 step "prove the session is installed"
-  ssh "ls -l /usr/share/xsessions/gnome.desktop"
+  ssh "ls -l /usr/share/xsessions/mate.desktop"
   timeout 120
 
 
@@ -308,7 +323,7 @@ step "prove the session is installed"
 # `pfexec svcadm enable` from vmuser's session is another command the account is not entitled to run -
 # the 49e152e run showed `pfexec` reaching nothing it did not already own.
 step "enable the display manager in the root shell"
-  input text "svcadm enable svc:/application/graphical-login/gdm:default; echo GDM_EXIT=$?"
+  input text "svcadm enable -r svc:/application/graphical-login/lightdm:default; echo DM_EXIT=$?"
   type_gap 0.05
   settle 3
 
@@ -319,7 +334,7 @@ step "run the enable"
 
 
 step "the display manager reports online"
-  ssh "svcs -H -o state svc:/application/graphical-login/gdm:default"
+  ssh "svcs -H -o state svc:/application/graphical-login/lightdm:default"
   timeout 180
 
 
@@ -340,7 +355,7 @@ step "the desktop is on screen"
       mode text
       rect [0, 0, 1920, 1080]
       rect_at [1920, 1080]
-      words [["Activities"]]
+      words [["Applications"]]
     max 60
 
 
