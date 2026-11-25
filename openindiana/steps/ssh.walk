@@ -66,16 +66,46 @@ step "prove the boot environment is the one that was installed"
 #
 # MEASURED on 45612202261: the step after these read `bash: line 1: sudo: command not found`, which
 # says illumos has no sudo - it raises privilege with `pfexec` - and says nothing about whether
-# `vmuser` is ENTITLED to pfexec. OpenIndiana's text installer creates the user it is given as an
-# ordinary account and puts no profile on it, so `pfexec` can answer "not privileged" just as
-# readily. Printing all three facts here means the next failure is a line in this log rather than an
-# inference.
+# `vmuser` is ENTITLED to use it.
 #
-# THE STEP CANNOT FAIL ON THE ANSWER. `command -v` and `id` are being REPORTED, not asserted: a
-# machine whose account is not privileged is still a machine this stage has to describe accurately.
+# MEASURED on 45613187768, this step's first run:
+#
+#	pfexec: /usr/bin/pfexec
+#	id:     uid=101(vmuser) gid=10(staff)
+#	profiles:
+#	  Basic Solaris User
+#	  All
+#
+# AND THE NEXT STEP STILL FAILED, which is the whole reason `auths` is printed here too:
+#
+#	pkg install: Insufficient access to complete the requested operation.
+#	Please try the operation again as a privileged user.
+#
+# `profiles` LISTS COMMANDS; `pkg` CHECKS AN AUTHORIZATION. `/etc/security/prof_attr` defines
+# `All` as every executable attribute with NO authorizations behind them, and IPS answers only to
+# `solaris.admin.packager`. So a user can be told "All" and still be refused by the package manager -
+# which is what happened, and is exactly the difference this line exists to expose.
+#
+# `auths` is the list that matters for a decision like that, and printing it costs one line.
 step "report how this account could raise privilege"
-  ssh "sh -c 'echo \"sudo:   $(command -v sudo || echo none)\"; echo \"pfexec: $(command -v pfexec || echo none)\"; echo \"id:     $(id)\"; echo \"profiles:\"; profiles 2>/dev/null || echo \"  (no profiles command)\"'"
+  ssh "sh -c 'echo \"sudo:   $(command -v sudo || echo none)\"; echo \"pfexec: $(command -v pfexec || echo none)\"; echo \"id:     $(id)\"; echo \"profiles:\"; profiles 2>/dev/null || echo \"  (no profiles command)\"; echo \"auths:\"; auths 2>/dev/null || echo \"  (no auths command)\"'" 
   timeout 120
+
+
+# THE AUTHORIZATION IS GRANTED HERE, WITH THE PROFILE THAT IS ALREADY PROVEN TO WORK.
+#
+# `pfexec usermod` RUNS AS ROOT because profile `All` grants the command, and `usermod` then writes
+# the authorization into the user's own `user_attr` entry. THE SESSION THAT RUNS IT DOES NOT GAIN IT -
+# illumos reads authorizations at login - but every step after this opens a NEW ssh session, so the
+# next one sees the list as it is now. That is why the grant and the use of it are separate steps.
+step "give this account the packager authorization"
+  ssh "pfexec usermod -A +solaris.admin.packager {{ user }}"
+  timeout 180
+
+
+step "prove a fresh session carries the authorization"
+  ssh "auths"
+  timeout 60
 
 
 # THE DESKTOP IS WHAT THIS STAGE ADDS, AND IT IS INSTALLED THE WAY OPENINDIANA INSTALLS THINGS.
