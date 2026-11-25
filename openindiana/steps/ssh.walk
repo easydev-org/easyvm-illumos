@@ -1,26 +1,40 @@
 walkthrough "openindiana 2026.10 - sshd, a desktop, and a graceful shutdown"
 resolution 1920x1080
 recording_resolution 1920x1080
-# THE ACCOUNT THAT LOGS IN IS THE ONE THE INSTALLER CREATED, BECAUSE IT IS THE ONLY ONE THAT CAN.
+# ROOT IS A ROLE ON THIS SYSTEM, NOT AN ACCOUNT, AND THAT IS WHY FOUR RUNS FAILED.
 #
-# MEASURED, FOUR RUNS, AND EACH CLOSED A DIFFERENT DOOR:
+# EACH RUN CLOSED ONE DOOR, AND THE FOURTH ONE IS THE SCREENSHOT THAT EXPLAINS ALL OF THEM:
 #
-#	45612202261  `sudo pkg install -y ...`       -> bash: line 1: sudo: command not found
-#	45613187768  pfexec present, `profiles: All`, then pkg install -> Insufficient access
-#	bd0900f run  `auths` has NO solaris.admin.packager; `pfexec usermod -A` -> Permission denied
-#	ec7c6cb run  `ssh_user root`, and the console of that run shows why that cannot work either:
+#	45612202261  `sudo pkg install -y ...`   -> bash: line 1: sudo: command not found
+#	                                              (illumos has no sudo at all)
+#	45613187768  pfexec present, profiles: All, then pkg -> `Insufficient access`
+#	bd0900f run  auths has NO solaris.admin.packager; `pfexec usermod -A ...` -> Permission denied
+#	ec7c6cb run  `ssh_user root` -> every ssh attempt refused, once a minute:
+#	                                              `PAM: Authentication failed for root from 172.30.0.1`
+#	368f6db run  the same disk, logged in AT THE CONSOLE as root, answers:
 #
-#		openindiana console login:
-#		sshd-session[1167]: error: PAM: Authentication failed for root from 172.30.0.1
+#		openindiana console login: root
+#		Password:
+#		Roles can only be assumed by authorized users
+#		Login incorrect
+#		openindiana login: login account failure: Permission denied
 #
-#	             repeated every minute for the whole budget. The system booted perfectly -
-#	             illumos-c893fd03ad, 151/151 service descriptions, `Hostname: openindiana` - and
-#	             answered sshd; the ROOT PASSWORD IS NOT THE ONE THE INSTALL WALK TYPED. So vmuser
-#	             is the only account that authenticates, and it has no privilege.
+# ROOT IS A ROLE. Illumos RBAC makes `root` a role whose identity cannot be logged in to directly -
+# not on ssh, not at the console. It is ASSUMED from an account that is authorized to assume it, and
+# the installer's `vmuser` is the account that exists. So:
 #
-# THE PRIVILEGE IS THEREFORE ESTABLISHED ONCE, AT THE CONSOLE, WHICH IS THE INTERFACE THE INSTALLER
-# ITSELF USED. This is the first stage that boots the installed disk, so it is where the account the
-# installer left behind gets completed; every later stage inherits the result.
+#	vmuser is who logs in                it authenticates over ssh (every run proved that)
+#	`su -` is how root is assumed        the role is entered, not logged in to
+#	inside it, one `usermod` grants      the authorization `pkg` requires
+#
+# AND THE THIRD RUN SHOWED WHY THAT GRANT HAS TO HAPPEN: `auths` for vmuser listed
+# solaris.admin.wusb.read, solaris.device.cdrw, solaris.device.mount.removable, solaris.mail.mailq and
+# solaris.profmgr.read - and NOT solaris.admin.packager, which is what IPS checks. `profiles: All`
+# grants COMMANDS; `pkg` asks for an AUTHORIZATION, and the two lists are different files.
+#
+# THE GRANT IS MADE OVER SSH ONCE THE ROLE IS ASSUMED, not typed at the console: the console on this
+# system needs a login the installer's own screen never established for us, while `su` inside an
+# authenticated ssh session is the supported way to enter a role.
 ssh_user vmuser
 var user
   default vmuser
@@ -66,113 +80,34 @@ step "prove the boot environment is the one that was installed"
   timeout 120
 
 
-# THE AUTHORIZATION HAS TO EXIST BEFORE ANY `ssh` STEP CAN USE IT, AND NO `ssh` STEP CAN CREATE IT.
+# THE ROLE IS ASSUMED HERE, AND ONE COMMAND INSIDE IT GRANTS WHAT `pkg` CHECKS.
 #
-# Run bd0900f showed both halves of that at once: `auths` listed the ordinary user authorizations and
-# NOT `solaris.admin.packager`, and `pfexec usermod -A +solaris.admin.packager vmuser` answered
+# `su -` WITH NO USER NAME ASSUMES THE ROOT ROLE for an account that is a member of it. The install
+# walk set vmuser's password to this same `{{ password }}`, so a non-interactive `su` can be spelled
+# with `-c` - but `su` still reads a password from stdin unless the caller is already authorized, so
+# the password goes through `-c` the way it goes through every other prompt on this system.
 #
-#	UX: usermod: ERROR: Permission denied.
+# `printf '%s\n'` RATHER THAN `echo` because the password is data: a value starting with `-` or
+# containing a backslash is a different string to `echo` than to the reader.
 #
-# The account cannot grant itself what it does not have. But root can - if root were reachable over
-# ssh, which the ec7c6cb run proved it is not (`PAM: Authentication failed for root` for ten minutes,
-# while the same disk's console showed a perfectly healthy boot).
-#
-# SO THE CHANGE IS MADE AT THE CONSOLE, WHICH IS THE INTERFACE THE INSTALL WALK ITSELF DROVE. The text
-# installer typed a root password on this very screen; the console therefore has an administrator the
-# network does not. Two keystrokes reach it and one command grants the authorization that every `ssh`
-# step after this needs.
-#
-#	`root` + Return            the console login prompt is on screen after boot - `smoke.walk` proves
-#	                           that, and it is the one thing every run of this stage has shown
-#	the root password         the same `{{ password }}` the install walk typed into the installer's
-#	                           root field
-#
-# THE TYPING IS SEQUENCED LIKE THE INSTALLER'S USERS PAGE: `type` with a gap, then Return, because
-# this console echoes nothing and a password sent faster than it can read is a password that lost
-# characters.
-#
-# IF THIS FAILS, THE MESSAGE IS THE ANSWER: a wrong root password, a prompt that never appeared, or
-# an `usermod` that still refuses. Each is a different line in this log, which is why the step is
-# named for what it establishes rather than for what it types.
-step "type root at the login prompt"
-  input text root
-  type_gap 0.1
-  settle 2
+# THE AUTHORIZATION IS THE ONE THE THIRD RUN NAMED AS MISSING. `auths` listed five entries and
+# `solaris.admin.packager` was not among them; `usermod -A` APPENDS it and leaves the rest alone.
+step "assume the root role and grant the packager authorization"
+  ssh "printf '%s\n' '{{ password }}' | su -c 'usermod -A +solaris.admin.packager {{ user }}'"
+  timeout 300
 
 
-step "take the login name"
-  input ret
-  settle 6
-
-
-step "type the root password at the console"
-  input text "{{ password }}"
-  type_gap 0.1
-  settle 2
-
-
-step "take the root password"
-  input ret
-  settle 8
-
-
-step "read the console"
-  read
-    name console
-
-
-step "prove the console is a root shell"
-  check
-    source console
-    mode text
-    rect [0, 0, 1920, 200]
-    rect_at [1920, 1080]
-    words [[root]]
-    name console_is_root
-
-
-# THE AUTHORIZATION IS FOR `pkg` SPECIFICALLY, BECAUSE THAT IS WHAT REFUSED IT.
-#
-# `pkg` needs `solaris.admin.packager`; `usermod -A` appends one authorization without touching the
-# ones the installer already put there. `-P` would replace the profile list, which is not what is
-# wanted here - the account already has what it needs to be a desktop user.
-step "grant the packager authorization from the console"
-  input text "usermod -A +solaris.admin.packager {{ user }}"
-  type_gap 0.1
-  settle 2
-
-
-step "run the grant"
-  input ret
-  settle 5
-
-
+# THE PROOF IS THE SAME COMMAND THAT WAS EMPTY BEFORE, RUN FROM A NEW SESSION.
 step "prove a fresh session carries the authorization"
   ssh "auths"
   timeout 60
 
 
-# THE DESKTOP IS WHAT THIS STAGE ADDS, AND IT IS INSTALLED AS THE ACCOUNT THE INSTALLER CREATED.
-#
-# `--accept`, NOT `-y`, AND THE FIRST RUN IS WHAT SAID SO. MEASURED on run 45613187768:
-#
-#	pkg install: illegal option -- y
-#	Usage: pkg install [-nvq] [-C n] [-g path_or_uri ...] [--accept]
-#	                   [--licenses] ...
-#
-# `pkg` is IPS and takes `--accept` for "do not ask me to confirm"; `--licenses` is the second
-# consent a publisher's own packages need, and a desktop group certainly has one.
-#
-# `solaris-desktop` IS THE PUBLISHER'S OWN GROUP for the GNOME desktop rather than a list of
-# packages, because naming them one by one is how a desktop ends up installed but unusable - a
-# session file with nothing to start it.
-#
-# NOTE: THE PACKAGE ITSELF HAS NOT RESOLVED YET. Runs so far established the account, the option
-# spelling and the authorization answer; the group's name, whether `gdm` is the display manager that
-# ships with it, and how long it takes are what the next run has to confirm.
-#
-# THE TIMEOUT IS LONG BECAUSE `pkg` RESOLVES AGAINST THE NETWORK. Ninety minutes is the ceiling a
-# leg has, not an expectation.
+step "the authorization is in effect"
+  ssh "auths | tr ',' '\n' | grep -x solaris.admin.packager"
+  timeout 60
+
+
 step "install the desktop"
   ssh "pfexec pkg install --accept --licenses solaris-desktop"
   timeout 5400
