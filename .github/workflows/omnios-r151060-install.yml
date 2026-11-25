@@ -1,0 +1,52 @@
+name: omnios-r151060-install
+
+# INSTALL OMNIO S ONTO A DISK THIS STAGE MAKES, AND PUBLISH IT.
+#
+# THIS IS THE FIRST STAGE, SO IT HAS NO `pull:`: the disk is created by the walkthrough's `disk:` step
+# and the medium arrives from this repository's ghcr package as `assets:`.
+#
+# THE INSTALLER IMAGE IS MIRRORED, NOT FETCHED FROM THE PUBLISHER. `artifacts-publish.yml` puts it in
+# the package once, with its digest checked; a stage asks the package and nothing upstream.
+#
+# 25 GB, NOT 24. The installer's disk page reports the virtio disk's size and a 24 GiB image is
+# accepted, but OpenIndiana's installer refuses a 24 GiB disk with `Too small` and the same pool is
+# what OmniOS creates - so the disk is one gigabyte larger than the smallest that was measured to
+# work, and there is no second measurement to make.
+on:
+  workflow_dispatch:
+    inputs:
+      disks_repository:
+        description: "the ghcr repository that holds the disks and media"
+        default: "easydev-org/easyvm-solaris"
+
+concurrency:
+  group: omnios-r151060-install
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  checks: write
+
+jobs:
+  install:
+    uses: easydev-org/easyvm/.github/workflows/stage.yml@v0.0.4
+    secrets: inherit
+    with:
+      image_repository: easydev-org/easyvm
+      image_tag: v0.0.4
+      disk_gb: "25"
+      group: omnios-r151060-install
+      disks_repository: ${{ inputs.disks_repository }}
+      stages: |
+        [
+          {
+            "name": "omnios-install",
+            "file": "omnios/steps/install.walk",
+            "pull": "",
+            "assets": ["iso-omnios-r151060:omnios-r151060.iso.tar"],
+            "out": "omnios-install.qcow2",
+            "publish": "omnios-install",
+            "timeout": 120
+          }
+        ]

@@ -38,15 +38,16 @@ walkthrough "omnios r151060 - the text installer to an installed disk"
 resolution 1024x768
 recording_resolution 1024x768
 
-var user
-  default vmuser
-  from args.user
-
-password admin
-
+var disk_gb
+  default "25"
+  from args.disk_gb
 var out
   default out/omnios-install.qcow2
   from args.out
+password admin
+var user
+  default vmuser
+  from args.user
 
 
 step "the media is on disk"
@@ -56,7 +57,7 @@ step "the media is on disk"
 step "create the empty disk"
   disk
     file disk.qcow2
-    size 24
+    size "{{ disk_gb }}"
 
 
 step "boot the installer"

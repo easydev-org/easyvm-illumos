@@ -53,6 +53,8 @@ jobs:
       matrix:
         artifact:
           - { tag: "iso-openindiana-2026.10-minimal", group: "others", url: "https://dlc.openindiana.org/isos/hipster/20261030/OI-hipster-minimal-20261030.iso", sha: "25f3b56b6c4f2c37791f836d3ecf1dc4075905078d117f93ab00c3782e6e9ea3", size: "569690112" }
+          - { tag: "iso-omnios-r151060", group: "others", url: "https://downloads.omnios.org/media/stable/omnios-r151060.iso", sha: "ddb82557a580fbd295d5d2f59742517458c2cb73f36b5bff74b3d1c65158a311", size: "329123840" }
+          - { tag: "iso-tribblix-0m41.1", group: "others", url: "https://iso.tribblix.org/iso/tribblix-0m41.1.iso", sha: "ff5044c0c588424ddabaaeb2ab533dc4a5b99e41732649ba7a05147acf7b91b6", size: "1396197376" }
     # NO `if:` HERE, AND THAT IS NOT AN OVERSIGHT: A JOB-LEVEL `if:` CANNOT SEE `matrix`.
     #
     # GitHub evaluates a job's `if:` before the matrix is expanded, so `matrix.artifact.tag` is empty

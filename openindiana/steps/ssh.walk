@@ -174,14 +174,22 @@ step "read what the console says after su"
     name after_su
 
 
+# THE PROOF IS THE LINE `su` ITSELF PRINTS, WHICH THE 7f0459b CONSOLE SHOWS VERBATIM:
+#
+#	Nov 25 13:09:33 openindiana su: 'su root' succeeded for vmuser on /dev/console
+#	root@openindiana:~#
+#
+# `root@` IS THE SHELL'S OWN PROMPT for the assumed identity, which is a fact about the session
+# rather than about the word "root" appearing somewhere on the screen - the mistake the 368f6db run's
+# check made when it matched the login prompt's own text.
 step "the root role was assumed"
   check
     source after_su
     mode text
-    rect [0, 0, 1920, 400]
+    rect [0, 0, 1920, 1080]
     rect_at [1920, 1080]
-    without [incorrect, "Permission denied", "can only be assumed"]
-    words [[root]]
+    without [incorrect, "Permission denied", "can only be assumed", "not a valid"]
+    words [["root@openindiana"]]
     name role_assumed
 
 
@@ -191,8 +199,36 @@ step "the root role was assumed"
 # result must be visible to a NEW ssh session, which is where `pkg` runs. Doing the grant over the
 # console and the proof over ssh also keeps the two independent - a session that inherited the
 # authorization could not be evidence that it was granted.
-step "grant the packager authorization in the role"
-  input text "usermod -A +solaris.admin.packager {{ user }}"
+# THE GRANT IS A PROFILE, NOT AN AUTHORIZATION NAME, AND THE CONSOLE SAID SO IN ONE LINE.
+#
+# MEASURED on the 7f0459b run, in the assumed root shell:
+#
+#	root@openindiana:~# usermod -A +solaris.admin.packager vmuser
+#	UX: usermod: ERROR: +solaris.admin.packager is not a valid authorization.  Choose another.
+#
+# `-A` takes a name from `/etc/security/auth_attr`; `solaris.admin.packager` is the AUTHORIZATION a
+# package operation checks, but it is not itself declared as a login authorization. What `pkg`
+# really wants is the PROFILE that carries it, and illumos names that one `Solaris Package Manager`.
+#
+# `-P +"Solaris Package Manager"` APPENDS the profile and leaves the ones the installer already set
+# alone - the same `+` semantics `-A` has, on the other list.
+#
+# THE NAME IS PRINTED FROM THIS SYSTEM RATHER THAN ONLY TRUSTED. If the profile were called something
+# else, the line before the grant would show it, and `usermod` would name the replacement - which is
+# exactly how the run above got from a wrong authorization name to this one.
+step "read the profile this system offers for package administration"
+  input text "grep -i package /etc/security/prof_attr"
+  type_gap 0.1
+  settle 2
+
+
+step "show the profile list"
+  input ret
+  settle 5
+
+
+step "grant the package profile in the role"
+  input text "usermod -P +'Solaris Package Manager' {{ user }}"
   type_gap 0.1
   settle 2
 
@@ -202,12 +238,12 @@ step "run the grant"
   settle 8
 
 
-step "prove a fresh session carries the authorization"
-  ssh "auths"
+step "prove the new session has the profile"
+  ssh "profiles"
   timeout 60
 
 
-step "the authorization is in effect"
+step "prove the authorization followed the profile"
   ssh "auths | tr ',' '\n' | grep -x solaris.admin.packager"
   timeout 60
 
