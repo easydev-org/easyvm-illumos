@@ -112,6 +112,19 @@ step "english, the default"
   settle 25
 
 
+# THE GATE IS `installation menu`, NOT `Install OpenIndiana`, AND THE MEASUREMENT IS THE REASON.
+#
+# MEASURED on run 45665672035: sixty-one consecutive frames read the top line as
+#
+#	Welcome to the UpeniIndiana illumos-cs93fd?sad installation menu
+#
+# - `O` recognised as `U` and `OpenIndiana` as `UpeniIndiana`, on the SAME frame where the run before
+# this one (45646822391) read `Install OpenIndiana` cleanly. The band is small and the glyphs are
+# thin, so that word is not a stable witness; `installation menu` is, because it is longer, lower,
+# and appears in every one of those sixty-one reads.
+#
+# THE MENU IS ALSO EVIDENCE ENOUGH ON ITS OWN: this text exists nowhere else in the installer, and
+# the very next step presses Return on a row that is preselected.
 step "the installation menu is on screen"
   repeat
     do
@@ -126,7 +139,7 @@ step "the installation menu is on screen"
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      words [[Install, OpenIndiana]]
+      words [[installation, menu]]
     max 60
 
 
@@ -173,7 +186,7 @@ step "the disk page is up, with the virtio disk already ticked"
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      words [[Where, should, OpenIndiana, be, installed], [Virtio]]
+      words [[Where, should], [Virtio]]
     max 40
 
 
