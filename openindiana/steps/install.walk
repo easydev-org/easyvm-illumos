@@ -751,8 +751,25 @@ step "the root role was assumed"
 # Typing is one action and Return is another, and on this console a long line typed at speed can still
 # be arriving when the Return is sent. A SIX-WORD SCRIPT NAME does not have that problem, and the
 # script itself can be as long as it likes.
+# `pkg` RUNS IN THE BACKGROUND, BECAUSE A FOREGROUND INSTALL TAKES THE SHELL FOR FORTY MINUTES.
+#
+# MEASURED on run 45718833057, whose last frame is the whole story:
+#
+#	root@openindiana:~# sh /tmp/as.sh
+#	svcadm enable -r svc:/application/graphical-login/lightdm:default; echo DM_EXIT=$?
+#	clear; svcs -H -o fmri,state svc:/application/graphical-login/lightdm:default
+#	clear; svcs -H -o fmri,state svc:/application/graphical-login/lightdm:default
+#	... eight more, and not one of them produced a line of output
+#
+# `sh /tmp/as.sh` WAS STILL RUNNING `pkg install` IN THE FOREGROUND. The shell was blocked for the
+# whole install, so every later keystroke went into a terminal nothing was reading - `clear` could not
+# clear and `svcs` could not answer, and the loop typed its question thirty times at a prompt that was
+# not there to take it.
+#
+# `( ... ) &` PUTS THE WHOLE THING IN A SUBSHELL THAT RETURNS AT ONCE, and the exit status lands in
+# the file when it finishes. The shell is free from the first second, and the status is still recorded.
 step "write the install as a script"
-  input text "printf '%s\\n' 'pkg install --accept --deny-new-be mate_install > /tmp/pkg.log 2>&1' 'echo PKG_EXIT=$? | tee /tmp/pkg.exit' > /tmp/as.sh"
+  input text "printf '%s\\n' '( pkg install --accept --deny-new-be mate_install > /tmp/pkg.log 2>&1; echo PKG_EXIT=$? > /tmp/pkg.exit ) &' > /tmp/as.sh"
   type_gap 0.05
   settle 4
 
@@ -878,11 +895,20 @@ step "answer the licence pages until the install proceeds"
 #
 # AND THE PROOF THAT FOLLOWS IS THE DISK, NOT THE WORD: the step after this asks the published system
 # over ssh whether `mate.desktop` exists.
+# THE STATUS IS READ FROM THE FILE, BECAUSE THE BACKGROUND INSTALL PRINTS NOTHING TO THE CONSOLE.
+#
+# The subshell writes `PKG_EXIT=<code>` into `/tmp/pkg.exit` and nothing else appears on screen for the
+# forty minutes it runs. `cat` before the file exists prints an error and costs eight seconds; `cat`
+# after it exists prints the answer. The loop asks again rather than assuming either.
 step "wait for the install to finish"
   repeat
     do
-      item
-        settle 15
+      item "ask the file whether the install is done"
+        input text "clear; cat /tmp/pkg.exit 2>/dev/null"
+        settle 3
+      item "press return on its own"
+        input ret
+        settle 12
       item "read the screen"
         read
           name after_pkg
@@ -893,7 +919,7 @@ step "wait for the install to finish"
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
       words [[PKG_EXIT]]
-    max 400
+    max 300
 
 
 step "enable the display manager in the root shell"
