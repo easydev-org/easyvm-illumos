@@ -284,8 +284,21 @@ step "run the install"
 # network, which is the whole reason it needs a budget rather than a pause.
 #
 # SO THIS IS A LOOP WITH A CEILING: it reads the screen until the line appears or ninety minutes pass.
-# `PKG_EXIT=` IS THE RIGHT THING TO WAIT FOR because the shell prints it whatever `pkg` decided - the
-# line appearing at all is "the command finished", and its VALUE is what the next step judges.
+#
+# AND IT WAITS FOR `PKG_EXIT=0` AND NOT FOR `PKG_EXIT`, WHICH IS A MISTAKE THIS WALK ALREADY MADE. The
+# word `PKG_EXIT` is IN THE COMMAND ITSELF - `... mate_install; echo PKG_EXIT=$?` - so a gate that
+# looked for it passed on the FIRST attempt, 20 seconds in, while the console still read
+#
+#	root@openindiana:~# pkg install --accept --licenses mate_install; echo PKG_EXIT=$?
+#	Refreshing catalog 1/1 openindiana.org 53.76 MB|
+#
+# and the run then judged a value the shell had not printed yet. A DIGIT AFTER `PKG_EXIT=` only exists
+# once the shell has spoken, because the command line spells it `PKG_EXIT=$?`.
+#
+# THE EXIT CODES ARE LISTED RATHER THAN "ANY DIGIT" because a text gate matches words, not patterns.
+# `pkg` answers 0 on success and non-zero on every refusal this stage has already met - an unprivileged
+# install, an unknown package, a failed catalog refresh - so the list is the four a failure takes, and
+# a code outside it would mean the shell itself did not run, which is its own finding.
 step "wait for the install to finish"
   repeat
     do
@@ -300,7 +313,7 @@ step "wait for the install to finish"
       mode text
       rect [0, 0, 1920, 1080]
       rect_at [1920, 1080]
-      words [[PKG_EXIT]]
+      words [[PKG_EXIT=0], [PKG_EXIT=1], [PKG_EXIT=2], [PKG_EXIT=4]]
     max 270
 
 

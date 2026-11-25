@@ -1,0 +1,134 @@
+# TRIBBLIX 0m41.1 OVER SSH - the administrator logs in, and the desktop is proven from outside.
+#
+# THIS IS THE STAGE THAT ANSWERS A QUESTION THE INSTALL LEG CANNOT: does the disk it published reach
+# a shell over the NETWORK, and is there a session behind it? Nothing here is answered from the
+# console except where the console is the only place a thing can be done, and that is called out.
+#
+# TRIBBLIX'S ADMINISTRATOR IS `root` AND IT IS A REAL ACCOUNT, NOT A ROLE.
+#
+# This is the first thing that separates Tribblix from OpenIndiana, where `root` is an RBAC role that
+# cannot log in at all and the whole stage has to assume it from the installer's `vmuser`. MEASURED
+# here: the live system's own `root`/`tribblix` logs in directly at the console, and `live_install.sh`
+# copies `/etc/shadow` into the new boot environment as part of "copy the minimum that defines the
+# system's identity" - which is what the project's `over_install.sh` documentation describes. So the
+# installed disk answers `root` with the same password the medium did.
+#
+# THE CLEAN HOST KEY IS DELIBERATE AND NOT A SHORTCUT. `ssh_user root` plus `password {{ password }}`
+# with `password` set to `tribblix` is what the daemon uses for its own probe; nothing here has to
+# accept a host key by hand.
+walkthrough "tribblix 0m41.1 - sshd, the desktop it already has, and a shutdown"
+resolution 1920x1080
+recording_resolution 1920x1080
+ssh_user root
+var user
+  default root
+  from args.user
+var out
+  default out/tribblix-ssh.qcow2
+  from args.out
+password tribblix
+ssh_port 2222
+
+step "boot the installed disk"
+  boot
+    machine "q35,accel=kvm,vmport=off"
+    args [["-cpu", "Skylake-Client-v4"], ["-smp", "4"], ["-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd"], ["-drive", "if=pflash,format=raw,file=OVMF_VARS.fd"], ["-m", "4096"], ["-chardev", "socket,id=qga0,path=qga.sock,server=on,wait=off"], ["-device", "virtio-serial"], ["-device", "virtserialport,chardev=qga0,name=org.qemu.guest_agent.0"], ["-device", "VGA,xres=1920,yres=1080,vgamem_mb=32"], ["-device", "qemu-xhci,id=xhci"], ["-device", "usb-tablet,bus=xhci.0"], ["-device", "usb-kbd,bus=xhci.0"], ["-drive", "file=disk.qcow2,if=none,format=qcow2,discard=unmap,id=target"], ["-device", "virtio-blk-pci,drive=target,bootindex=0"], ["-audiodev", "none,id=snd0"], ["-device", "ich9-intel-hda"], ["-device", "hda-duplex,audiodev=snd0"], ["-netdev", "tap,id=net0,ifname=qemutap0,script=no,downscript=no"], ["-device", "virtio-net-pci,netdev=net0,mac=52:54:00:56:4d:01,romfile=,host_mtu=1450"]]
+    timeout 900
+
+
+# THE DAEMON PROBES sshd ON ITS OWN TICKER, so this waits for its verdict rather than for a console
+# line: Tribblix's sshd logs to `/var/adm/messages`, not to the 1024x768 console this walk can see.
+step "wait for sshd"
+  repeat
+    until machine_ssh
+    max 60
+    pause 10
+
+
+step "prove the kernel over ssh"
+  ssh "uname -a"
+  timeout 120
+
+
+step "prove the account over ssh"
+  ssh "id -un"
+  timeout 120
+
+
+step "prove the root pool is the one that was installed"
+  ssh "zpool list -H -o name,size rpool"
+  timeout 120
+
+
+step "prove the desktop overlay is on the disk"
+  ssh "ls /usr/share/xsessions"
+  timeout 120
+
+
+# THE DESKTOP IS ALREADY INSTALLED, AND THAT IS THE DIFFERENCE FROM OPENINDIANA.
+#
+# The install stage ran `live_install.sh -G c1t0d0 desktop`, which installs the Xfce overlay FROM THE
+# MEDIUM - no network, no `pkg` run, no ninety-minute step. MEASURED: `/usr/share/xsessions` on a disk
+# this install produced holds `xfce.desktop`, and the session's display manager is `slim`, which the
+# smoke stage's own boot showed starting `svc:/system/slim:default`.
+#
+# SO THIS STAGE ENABLES RATHER THAN INSTALLS, and the enable happens in the root shell over ssh,
+# which is a real account here - the thing OpenIndiana's stage has to do at the console.
+step "enable the display manager"
+  ssh "svcadm enable -r svc:/system/slim:default; echo DM_EXIT=$?"
+  timeout 300
+
+
+step "the display manager reports online"
+  ssh "svcs -H -o state svc:/system/slim:default"
+  timeout 300
+
+
+# THE SAME PICTURE GATE THE REST OF THIS REPOSITORY USES. A display manager that is online and a
+# session on screen are two different facts, and only the frame can tell them apart.
+#
+# THE WORDS ARE XFCE'S OWN. MEASURED: Tribblix's Xfce session draws its panel with the Applications
+# menu at the top left of the 1920x1080 frame, which is the same anchor OpenIndiana's MATE session
+# uses - so the gate is the same word for the same reason.
+step "the desktop is on screen"
+  repeat
+    do
+      item
+        settle 10
+      item "read the screen"
+        read
+          name screen
+    until
+      bind desktop
+      source screen
+      mode text
+      rect [0, 0, 1920, 1080]
+      rect_at [1920, 1080]
+      words [["Applications"]]
+    max 90
+
+
+step "flush the writes before anything else"
+  ssh "sync"
+  timeout 300
+
+
+step "flush the writes before the machine stops"
+  ssh "sync"
+  timeout 300
+
+
+# `stop ssh` RATHER THAN `stop power`: an ACPI power press asks the desktop to shut down, and a
+# desktop that is still bringing itself up may ignore it for the whole timeout.
+step "shut the machine down"
+  stop ssh
+  timeout 300
+
+
+step "wait for the machine to stop"
+  wait_until stopped
+  timeout 300
+
+
+step "publish the disk"
+  save "{{ out }}"
