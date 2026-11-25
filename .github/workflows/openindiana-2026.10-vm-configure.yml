@@ -1,0 +1,53 @@
+name: openindiana-2026.10-vm-configure
+
+# THE CONFIGURE STAGE: the desktop is up, the machine has a name, a time zone and a locale.
+#
+# IT CONTINUES `openindiana-ssh`, WHICH IS WHAT THE SSH LEG PUBLISHES. The two are separate legs
+# because a desktop that fails to install and a desktop that boots are different questions, and a
+# single leg that answers both has only one place to report a failure.
+#
+# IT PUBLISHES A DISK, so a later stage can pull `openindiana-vm-configure`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      from_tag:
+        description: >-
+          the PUBLISHED disk this stage continues from (default openindiana-ssh)
+        default: "openindiana-ssh"
+      disks_repository:
+        description: "the ghcr repository that holds the disk"
+        default: "easydev-org/easyvm-solaris"
+
+concurrency:
+  group: openindiana-2026.10-vm-configure
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  checks: write
+
+jobs:
+  vm-configure:
+    uses: easydev-org/easyvm/.github/workflows/stage.yml@v0.0.4
+    secrets: inherit
+    with:
+      image_repository: easydev-org/easyvm
+      image_tag: v0.0.4
+      # THE PULLED DISK PLUS ITS COMPRESSED COPY, and this leg installs nothing - so it does not
+      # need the ssh leg's headroom for packages.
+      disk_gb: "30"
+      group: openindiana-2026.10-vm-configure
+      disks_repository: ${{ inputs.disks_repository }}
+      stages: |
+        [
+          {
+            "name": "openindiana-vm-configure",
+            "file": "openindiana/steps/vm-configure.walk",
+            "pull": "${{ inputs.from_tag }}",
+            "out": "openindiana-vm-configure.qcow2",
+            "publish": "openindiana-vm-configure",
+            "timeout": 90
+          }
+        ]

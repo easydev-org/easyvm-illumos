@@ -1,0 +1,139 @@
+walkthrough "openindiana 2026.10 - the desktop is up"
+resolution 1920x1080
+recording_resolution 1920x1080
+var hostname
+  default easyvm-openindiana
+  from args.hostname
+var locale
+  default en_US.UTF-8
+  from args.locale
+var out
+  default out/openindiana-vm-configure.qcow2
+  from args.out
+password admin
+var timezone
+  default America/Los_Angeles
+  from args.timezone
+var user
+  default vmuser
+  from args.user
+ssh_port 2222
+
+
+# THE SAME MACHINE THE INSTALL WROTE, FOR THE SAME REASONS THE SSH STAGE GIVES.
+#
+# `-m 4096` matches the installer, `-cpu Skylake-Client-v4 -smp 4` matches it too, and
+# `discard=unmap` is on the disk line because this is not an install stage. A vm-configure machine
+# that is smaller or differently-featured than the one that installed the system is a machine whose
+# failures look like a broken disk.
+step "boot the disk"
+  boot
+    machine "q35,accel=kvm,vmport=off"
+    args [["-cpu", "Skylake-Client-v4"], ["-smp", "4"], ["-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd"], ["-drive", "if=pflash,format=raw,file=OVMF_VARS.fd"], ["-m", "4096"], ["-chardev", "socket,id=qga0,path=qga.sock,server=on,wait=off"], ["-device", "virtio-serial"], ["-device", "virtserialport,chardev=qga0,name=org.qemu.guest_agent.0"], ["-device", "VGA,xres=1920,yres=1080,vgamem_mb=32"], ["-device", "qemu-xhci,id=xhci"], ["-device", "usb-tablet,bus=xhci.0"], ["-device", "usb-kbd,bus=xhci.0"], ["-drive", "file=disk.qcow2,if=none,format=qcow2,discard=unmap,id=target"], ["-device", "virtio-blk-pci,drive=target,bootindex=0"], ["-audiodev", "none,id=snd0"], ["-device", "ich9-intel-hda"], ["-device", "hda-duplex,audiodev=snd0"], ["-netdev", "tap,id=net0,ifname=qemutap0,script=no,downscript=no"], ["-device", "virtio-net-pci,netdev=net0,mac=52:54:00:56:4d:01,romfile=,host_mtu=1450"]]
+    timeout 900
+
+
+step "wait for sshd"
+  repeat
+    until machine_ssh
+    max 60
+    pause 10
+
+
+# THE DESKTOP IS WHAT THIS STAGE CONFIGURES, SO IT MUST BE RUNNING BEFORE ANYTHING IS SET IN IT.
+# `ssh.walk` is what installs it; this stage only starts the machine the ssh stage published.
+step "the desktop session is running"
+  ssh "sh -c 'pgrep -f gnome-session >/dev/null && echo GNOME_UP'"
+  timeout 180
+
+
+step "wait for the desktop"
+  repeat
+    do
+      item
+        settle 10
+      item "read the screen"
+        read
+          name desk
+    until
+      bind ready
+      source desk
+      mode text
+      rect [0, 0, 1920, 200]
+      rect_at [1920, 1080]
+      words [["Activities"]]
+    max 60
+
+
+step "the guest agent answers, which is what makes a graceful shutdown possible"
+  ssh "sh -c 'svcs -H -o state svc:/application/qemu-ga:default 2>/dev/null || pgrep -f qemu-ga >/dev/null && echo GUEST_AGENT_UP'"
+  timeout 180
+
+
+# illumos SPELLS THE MACHINE'S NAME IN TWO PLACES AND READS THEM AT DIFFERENT TIMES: `svccfg` writes
+# what the next boot will use, and `hostname` is what this session already has. Setting only the
+# first leaves the running system answering to its old name, and a later stage that resolves it
+# fails for a reason that has nothing to do with the failure.
+step "set the machine's name"
+  ssh "printf '%s\\n' '{{ password }}' | sudo -S -p '' sh -c 'svccfg -s svc:/system/identity:node setprop config/nodename = astring: {{ hostname }} && svccfg -s svc:/system/identity:node refresh && /usr/sbin/svccfg -s svc:/system/identity:node listprop config/nodename && hostname {{ hostname }}'"
+  timeout 180
+
+
+step "prove the name, in the service and in the running kernel"
+  ssh "sh -c 'echo \"service = $(svccfg -s svc:/system/identity:node listprop config/nodename | awk \"{print \\$3}\")\"; echo \"kernel  = $(hostname)\"; test \"$(hostname)\" = \"{{ hostname }}\" && echo HOSTNAME_OK'"
+  timeout 60
+
+
+# `/etc/TIMEZONE` IS WHAT illumos READS AT BOOT; `TZ` IN THE RUNNING SHELL IS NOT SET BY IT. Writing
+# both is what makes `date` agree now and after the next reboot, which is the pair a later stage can
+# actually check.
+step "set the time zone"
+  ssh "printf '%s\\n' '{{ password }}' | sudo -S -p '' sh -c 'printf \"TZ={{ timezone }}\\n\" > /etc/TIMEZONE && ln -sf /usr/share/lib/zoneinfo/{{ timezone }} /etc/localtime'"
+  timeout 120
+
+
+step "prove the time zone"
+  ssh "sh -c 'grep \"^TZ=\" /etc/TIMEZONE; readlink -f /etc/localtime; TZ={{ timezone }} date; grep -q \"{{ timezone }}\" /etc/TIMEZONE && echo TIMEZONE_OK'"
+  timeout 60
+
+
+# THE LOCALE IS SET WHERE LOGIN READS IT, NOT IN A FILE THAT ONLY INTERACTIVE SHELLS SOURCE. illumos
+# takes `LANG` from the login environment; `/etc/default/init` is what a service started at boot
+# inherits.
+step "set the locale"
+  ssh "printf '%s\\n' '{{ password }}' | sudo -S -p '' sh -c 'grep -q \"^LANG=\" /etc/default/init && sed -i \"s|^LANG=.*|LANG={{ locale }}|\" /etc/default/init || printf \"LANG={{ locale }}\\n\" >> /etc/default/init'"
+  timeout 120
+
+
+step "prove the locale a new login shell sees"
+  ssh "sh -c 'grep \"^LANG=\" /etc/default/init; LANG={{ locale }} sh -lc \"echo \\$LANG\"; grep -q \"LANG={{ locale }}\" /etc/default/init && echo LOCALE_OK'"
+  timeout 60
+
+
+step "prove the guest can fetch from the host share"
+  ssh "curl -fsS --max-time 20 http://172.30.0.1:8080/shared/"
+  timeout 180
+
+
+step "flush the writes before anything else"
+  ssh "sudo sync"
+  timeout 300
+
+
+step "flush the writes before the machine stops"
+  ssh "sudo sync"
+  timeout 300
+
+
+step "shut the machine down"
+  stop ssh
+  timeout 300
+
+
+step "wait for the machine to stop"
+  wait_until stopped
+  timeout 600
+
+
+step "publish the disk"
+    save "{{ out }}"

@@ -1,0 +1,148 @@
+walkthrough "openindiana 2026.10 - sshd, a desktop, and a graceful shutdown"
+resolution 1920x1080
+recording_resolution 1920x1080
+var out
+  default out/openindiana-ssh.qcow2
+  from args.out
+var user
+  default vmuser
+  from args.user
+password admin
+ssh_port 2222
+
+
+# THIS STAGE CONTINUES THE INSTALLED SYSTEM, SO IT BOOTS THE SAME MACHINE ONLY.
+#
+# `-m 4096` IS THE INSTALL'S OWN VALUE, copied rather than guessed. The installed system was written
+# by a 4 GiB machine and its boot environment was sized against that; a smaller one turns a disk
+# that installs perfectly into a disk that stops at the loader.
+#
+# `discard=unmap` IS ON THE DISK'S LINE because this is NOT an install stage - the checkpoint is
+# explicit that install/setup/resume are the three that must not have it and every other stage must.
+# It is also what makes the guest's own `pkg` install return freed clusters to the overlay the host
+# is writing, which matters on a runner that holds the base, the diff and the compressed result at
+# once.
+#
+# `-cpu Skylake-Client-v4` AND `-smp 4` ARE THE SAME REASON THE WINDOWS STAGES NEED THEM: a walk
+# with neither gets qemu's `qemu64`, and a guest that the installer booted on Skylake is not
+# guaranteed to come back on a cpu model whose feature set is a strict subset of it.
+step "boot the installed disk"
+  boot
+    machine "q35,accel=kvm,vmport=off"
+    args [["-cpu", "Skylake-Client-v4"], ["-smp", "4"], ["-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd"], ["-drive", "if=pflash,format=raw,file=OVMF_VARS.fd"], ["-m", "4096"], ["-chardev", "socket,id=qga0,path=qga.sock,server=on,wait=off"], ["-device", "virtio-serial"], ["-device", "virtserialport,chardev=qga0,name=org.qemu.guest_agent.0"], ["-device", "VGA,xres=1920,yres=1080,vgamem_mb=32"], ["-device", "qemu-xhci,id=xhci"], ["-device", "usb-tablet,bus=xhci.0"], ["-device", "usb-kbd,bus=xhci.0"], ["-drive", "file=disk.qcow2,if=none,format=qcow2,discard=unmap,id=target"], ["-device", "virtio-blk-pci,drive=target,bootindex=0"], ["-audiodev", "none,id=snd0"], ["-device", "ich9-intel-hda"], ["-device", "hda-duplex,audiodev=snd0"], ["-netdev", "tap,id=net0,ifname=qemutap0,script=no,downscript=no"], ["-device", "virtio-net-pci,netdev=net0,mac=52:54:00:56:4d:01,romfile=,host_mtu=1450"]]
+    timeout 900
+
+
+# THE INSTALLER'S NETWORK PAGE WAS SET TO "AUTOMATICALLY", AND THIS IS THE STAGE THAT DEPENDS ON IT.
+#
+# `smoke.walk` already reads the console login prompt of `172.30.0.2`, so the interface comes up on
+# its own and sshd answers. The wait is for `machine_ssh`, which the daemon probes on its own
+# ticker - not a console line, because `sshd` logs to a file on this system rather than to the
+# console the walk can see.
+step "wait for sshd"
+  repeat
+    until machine_ssh
+    max 60
+    pause 10
+
+
+step "prove the kernel over ssh"
+  ssh "uname -a"
+  timeout 120
+
+
+step "prove the account over ssh"
+  ssh "id -un"
+  timeout 120
+
+
+step "prove the boot environment is the one that was installed"
+  ssh "beadm list"
+  timeout 120
+
+
+# THE DESKTOP IS WHAT THIS STAGE ADDS, AND IT IS INSTALLED THE WAY OPENINDIANA INSTALLS THINGS.
+#
+# `solaris-desktop` IS THE PUBLISHER'S OWN GROUP for the GNOME desktop rather than a list of
+# packages, because naming them one by one is how a desktop ends up installed but unusable - a
+# session file with nothing to start it.
+#
+# NOTE: THIS WALK HAS NOT BEEN RUN. Nothing in it is measured yet, unlike every comment above it in
+# this repository, and the first run is what turns it into a claim: the group's name, whether `gdm`
+# is the display manager that ships with it, and how long `pkg` takes against the network are all
+# things to read off that run rather than to assert here. `solaris-desktop` is the group name this
+# stage was written against.
+#
+# THE TIMEOUT IS LONG BECAUSE `pkg` RESOLVES AGAINST THE NETWORK. Ninety minutes is the ceiling a
+# leg has, not an expectation.
+step "install the desktop"
+  ssh "sudo pkg install -y solaris-desktop"
+  timeout 5400
+
+
+step "prove the session is installed"
+  ssh "ls -l /usr/share/xsessions/gnome.desktop"
+  timeout 120
+
+
+step "the display manager is the one that starts"
+  ssh "svcs -H -o state svc:/application/graphical-login/gdm:default || true"
+  timeout 120
+
+
+step "enable the display manager at boot"
+  ssh "sudo svcadm enable svc:/application/graphical-login/gdm:default"
+  timeout 180
+
+
+step "the display manager reports online"
+  ssh "svcs -H -o state svc:/application/graphical-login/gdm:default"
+  timeout 120
+
+
+# A DISPLAY MANAGER THAT IS ONLINE AND A GNOME SESSION ARE TWO DIFFERENT FACTS, and this system is
+# slow enough to reach the second one minutes after the first. The screen is the only thing that can
+# tell them apart, so the walk looks at it - the same picture gate every other desktop wait here uses.
+step "the desktop is on screen"
+  repeat
+    do
+      item
+        settle 10
+      item "read the screen"
+        read
+          name screen
+    until
+      bind desktop
+      source screen
+      mode text
+      rect [0, 0, 1920, 1080]
+      rect_at [1920, 1080]
+      words [["Activities"]]
+    max 60
+
+
+step "flush the writes before anything else"
+  ssh "sudo sync"
+  timeout 300
+
+
+step "flush the writes before the machine stops"
+  ssh "sudo sync"
+  timeout 300
+
+
+# `stop ssh` RATHER THAN `stop power`: an ACPI power press asks the desktop to shut down, and a
+# desktop that is still bringing itself up may ignore it for the whole timeout. `stop ssh` sends the
+# command and tolerates the session ending with the machine, which is what `shutdown` does.
+step "shut the machine down"
+  stop ssh
+  timeout 300
+
+
+step "wait for the machine to stop"
+  wait_until stopped
+  timeout 300
+
+
+step "publish the disk"
+    save "{{ out }}"
