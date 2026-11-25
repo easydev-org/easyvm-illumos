@@ -497,20 +497,27 @@ step "boot the installed system, with no installer media attached"
     timeout 900
 
 
-# THE INSTALLED SYSTEM'S GRUB MENU COMES UP FIRST, AND IT WAITS. MEASURED on run 45646822391:
-# the step that types `vmuser` ran while the frame still read
+# THE INSTALLED SYSTEM'S BOOT MENU COMES UP FIRST, AND IT WAITS FOR A RETURN.
 #
-#	Options: 9. Configure Boot Options...  6. Select Boot Environment...  openindiana
+# MEASURED on run 45667527362: the frame the wait kept reading was
 #
-# - GRUB's menu, with its five second countdown. Every keystroke after that was eaten by the menu,
-# the login never happened, `pkg install` never ran, and the run spent fifty minutes waiting for a
-# PKG_EXIT line that could not appear. So the prompt is waited for BEFORE anything is typed, and the
-# prompt itself is the witness that the menu was passed.
+#	1. Boot Multi User [Enter]  2. Boot Single User  3. Escape to loader prompt  4. Reboot
+#
+# - the illumos loader's own menu, which does not count down. The step that types the account name
+# was pressed against this menu, every keystroke was eaten as a menu choice, the login never
+# happened, `pkg install` never ran, and the run spent fifty minutes waiting for a PKG_EXIT line
+# that could not appear. It is the same failure 45646822391 hit one menu earlier, at GRUB.
+#
+# SO THE RETURN IS INSIDE THE WAIT, the same shape the tribblix install uses: a Return on this menu
+# takes its preselected first row ("Boot Multi User"), and a Return at a login prompt merely redraws
+# the prompt. The retry cannot overshoot, and the prompt is still the witness.
 step "the installed system has reached its login"
   repeat
     do
       item
         settle 10
+      item "boot the default entry, or redraw a prompt that is already up"
+        input ret
       item "read the screen"
         read
           name login
