@@ -216,41 +216,61 @@ step "the root role was assumed"
 # THE NAME IS PRINTED FROM THIS SYSTEM RATHER THAN ONLY TRUSTED. If the profile were called something
 # else, the line before the grant would show it, and `usermod` would name the replacement - which is
 # exactly how the run above got from a wrong authorization name to this one.
-step "read the profile this system offers for package administration"
-  input text "grep -i package /etc/security/prof_attr"
-  type_gap 0.1
-  settle 2
+# THIS SYSTEM HAS NO PACKAGE PROFILE TO GRANT, AND THE CONSOLE SAID SO IN TWO LINES.
+#
+# MEASURED on the 49e152e run, in the assumed root shell:
+#
+#	root@openindiana:~# grep -i package /etc/security/prof_attr
+#	root@openindiana:~#                                   <- NO OUTPUT
+#	root@openindiana:~# usermod -P +'Solaris Package Manager' vmuser
+#	UX: usermod: ERROR: +Solaris Package Manager is not a valid profile name.  Choose another.
+#
+# AND `profiles` FOR THE ACCOUNT DID NOT GAIN IT EITHER:
+#
+#	Console User, Suspend To RAM, Suspend To Disk, Brightness, CPU Power Management,
+#	Network Autoconf User, Basic Solaris User, All
+#
+# `Solaris Package Manager` IS A SOLARIS 11 PROFILE AND THIS IS NOT SOLARIS 11. OpenIndiana Hipster
+# ships IPS without a profile named for it, so there is nothing to grant and no authorization name to
+# append - the two previous attempts failed on exactly that, from opposite directions.
+#
+# SO THE PACKAGE OPERATION RUNS IN THE ROOT SHELL, WHICH IS THE ONE PLACE ON THIS SYSTEM IT IS
+# PROVEN TO WORK. `su -` already succeeded and the prompt is `root@openindiana:~#`. Running `pkg`
+# there is not a workaround - it is the privileged context this disk actually has.
+#
+# THE RISK IS THE RECORDING, NOT THE COMMAND: a 90-minute `pkg` run holds the console, so the step's
+# own output is the only thing the log will show. That is acceptable here because `pkg` writes its
+# progress to the terminal this step is typing into.
+#
+# AND THE PROOF MOVES TO WHERE IT BELONGS: `pkg` EXITS NON-ZERO IF IT COULD NOT INSTALL, and the
+# desktop's own session file is then checked over ssh - which is a fact about the system rather than
+# about a name in an authorization list.
+step "install the desktop in the root shell"
+  input text "pkg install --accept --licenses solaris-desktop; echo PKG_EXIT=$?"
+  type_gap 0.05
+  settle 3
 
 
-step "show the profile list"
+step "run the install"
   input ret
-  settle 5
-
-
-step "grant the package profile in the role"
-  input text "usermod -P +'Solaris Package Manager' {{ user }}"
-  type_gap 0.1
-  settle 2
-
-
-step "run the grant"
-  input ret
-  settle 8
-
-
-step "prove the new session has the profile"
-  ssh "profiles"
-  timeout 60
-
-
-step "prove the authorization followed the profile"
-  ssh "auths | tr ',' '\n' | grep -x solaris.admin.packager"
-  timeout 60
-
-
-step "install the desktop"
-  ssh "pfexec pkg install --accept --licenses solaris-desktop"
   timeout 5400
+
+
+# `pkg` PRINTS NOTHING WHEN IT SUCCEEDS AND ITS PROGRESS IS THE WHOLE SCREEN. So the check is the
+# session file the group installs, read over ssh, and a `PKG_EXIT=0` line the console keeps.
+step "read the console after the install"
+  read
+    name after_pkg
+
+
+step "the install reported success"
+  check
+    source after_pkg
+    mode text
+    rect [0, 0, 1920, 1080]
+    rect_at [1920, 1080]
+    words [[PKG_EXIT=0]]
+    name pkg_ok
 
 
 step "prove the session is installed"
@@ -258,19 +278,23 @@ step "prove the session is installed"
   timeout 120
 
 
-step "the display manager is the one that starts"
-  ssh "svcs -H -o state svc:/application/graphical-login/gdm:default || true"
-  timeout 120
+# THE DISPLAY MANAGER IS ENABLED IN THE SAME ROOT SHELL, FOR THE SAME REASON THE INSTALL WAS.
+# `pfexec svcadm enable` from vmuser's session is another command the account is not entitled to run -
+# the 49e152e run showed `pfexec` reaching nothing it did not already own.
+step "enable the display manager in the root shell"
+  input text "svcadm enable svc:/application/graphical-login/gdm:default; echo GDM_EXIT=$?"
+  type_gap 0.05
+  settle 3
 
 
-step "enable the display manager at boot"
-  ssh "pfexec svcadm enable svc:/application/graphical-login/gdm:default"
-  timeout 180
+step "run the enable"
+  input ret
+  settle 10
 
 
 step "the display manager reports online"
   ssh "svcs -H -o state svc:/application/graphical-login/gdm:default"
-  timeout 120
+  timeout 180
 
 
 # A DISPLAY MANAGER THAT IS ONLINE AND A GNOME SESSION ARE TWO DIFFERENT FACTS, and this system is
@@ -295,12 +319,12 @@ step "the desktop is on screen"
 
 
 step "flush the writes before anything else"
-  ssh "pfexec sync"
+  ssh "sync"
   timeout 300
 
 
 step "flush the writes before the machine stops"
-  ssh "pfexec sync"
+  ssh "sync"
   timeout 300
 
 
