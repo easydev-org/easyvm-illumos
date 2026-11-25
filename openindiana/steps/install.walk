@@ -701,45 +701,71 @@ step "the root role was assumed"
 # five lines of the real outcome - back on the console where the exit line is read from.
 # `-r` ON THE ENABLE IS NOT OPTIONAL: it restarts the service and the ones that depend on it, which is
 # what makes lightdm actually come up rather than record that it should.
+# `yes | pkg install` DOES NOT ANSWER THE LICENCE PROMPT, AND THE RECORDING SAYS WHY.
+#
+# MEASURED on run 45681423101, whose console held nothing but licence text for forty minutes:
+#
+#	herein. This U.S. Government Rights clause is in lieu of, and supersedes, any other FAR, DFAR,
+#	or other clause or provision that addresses Government rights in computer software ...
+#	--- NOTICE PURSUANT TO SECTION 9 OF THE COMMON DEVELOPMENT AND DISTRIBUTION LICENSE (CDDL)
+#	root@openindiana:~#
+#
+# `pkg` READS ITS CONFIRMATION FROM THE TERMINAL, NOT FROM STDIN. A pipe answers stdin, so `yes |`
+# fed a question that was never read from there, and the command sat waiting with its prompt drawn on
+# the screen this walk is supposed to watch.
+#
+# SO THE COMMAND RUNS IN THE FOREGROUND AND THE PROMPT IS ANSWERED FROM THE CONSOLE. `y` then Return
+# is what a person types at that prompt, and the loop below is built to keep answering until the
+# licence page is gone rather than assuming one `y` is enough - some images ask once per publisher.
 step "install the desktop in the root shell"
-  input text "yes | pkg install --accept --licenses mate_install > /tmp/pkg.log 2>&1; echo PKG_EXIT=$?; tail -5 /tmp/pkg.log"
+  input text "pkg install --accept --licenses mate_install; echo PKG_EXIT=$?"
   type_gap 0.05
   settle 3
 
 
 step "run the install"
   input ret
-  settle 10
+  settle 15
 
 
-# THE EXIT LINE IS WAITED FOR, NOT INSPECTED ONCE, AND THE FIRST RUN IS WHAT SAID SO.
-#
-# MEASURED on the run before this one: the console at t=255 - the last frame before the step was
-# abandoned - still read
-#
-#	root@openindiana:~# pkg install --accept --licenses mate_install; echo PKG_EXIT=$?
-#
-# with the prompt still at the end of the line. The command had been TYPED and the Return had not
-# taken effect yet, so a `check:` placed straight after it read the boot text still on the screen and
-# answered `none of "PKG_EXIT=0" found`. A settle cannot fix that: how long `pkg` takes depends on the
-# network, which is the whole reason it needs a budget rather than a pause.
-#
-# SO THIS IS A LOOP WITH A CEILING: it reads the screen until the line appears or ninety minutes pass.
-#
-# AND IT WAITS FOR `PKG_EXIT=0` AND NOT FOR `PKG_EXIT`, WHICH IS A MISTAKE THIS WALK ALREADY MADE. The
-# word `PKG_EXIT` is IN THE COMMAND ITSELF - `... mate_install; echo PKG_EXIT=$?` - so a gate that
-# looked for it passed on the FIRST attempt, 20 seconds in, while the console still read
-#
-#	root@openindiana:~# pkg install --accept --licenses mate_install; echo PKG_EXIT=$?
-#	Refreshing catalog 1/1 openindiana.org 53.76 MB|
-#
-# and the run then judged a value the shell had not printed yet. A DIGIT AFTER `PKG_EXIT=` only exists
-# once the shell has spoken, because the command line spells it `PKG_EXIT=$?`.
-#
-# THE EXIT CODES ARE LISTED RATHER THAN "ANY DIGIT" because a text gate matches words, not patterns.
-# `pkg` answers 0 on success and non-zero on every refusal this stage has already met - an unprivileged
-# install, an unknown package, a failed catalog refresh - so the list is the four a failure takes, and
-# a code outside it would mean the shell itself did not run, which is its own finding.
+# THE LICENCE PAGE, ANSWERED UNTIL IT IS GONE. `PKG_EXIT` CANNOT APPEAR WHILE A PROMPT IS WAITING, so
+# this loop runs BEFORE the exit line is waited for: it types `y` whenever the screen shows the
+# licence, and it ends when the licence text is no longer there.
+step "answer the licence pages until the install proceeds"
+  repeat
+    do
+      item "read the screen"
+        read
+          name lic
+      item "is a licence page up"
+        check
+          source lic
+          mode text
+          name licensed
+          rect [0, 0, 1024, 768]
+          rect_at [1024, 768]
+          words [["CDDL"], [PUBLIC, LICENSE]]
+      item "say yes whenever the licence is on screen"
+        if licensed
+          then
+            item
+              input text "y"
+            item
+              input ret
+              settle 8
+      item
+        settle 5
+    until
+      bind proceeded
+      source lic
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      without [CDDL, "PURSUANT TO SECTION 9"]
+      words [[PKG_EXIT]]
+    max 40
+
+
 step "wait for the install to finish"
   repeat
     do
