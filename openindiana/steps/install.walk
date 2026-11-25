@@ -910,12 +910,22 @@ step "run the enable"
 # THE STATE IS ASKED AT THE CONSOLE, NOT OVER SSH, FOR THE REASON THE STEP ABOVE DOCUMENTS:
 # run 45713558013 answered `no route to host` on the ssh probe while the disk underneath was
 # perfect. `svcs` runs in the same root shell the enable just used, and its answer is one word.
+# TWO ITEMS, NOT ONE, FOR THE SAME REASON THE INSTALL IS A SCRIPT: A RETURN SENT WITH THE TEXT IS EATEN.
+#
+# MEASURED on run 45715663946, which sat here for eight minutes: `input text` and `input ret` in a
+# single item sends the Return before the line has been read, so the console showed the command and a
+# cursor and nothing else, thirty times over.
+#
+# AND `online` ALONE IS A WORD A BOOT LOG CAN CARRY. `svcs` prints one word; a machine that is still
+# booting prints `online` in its SMF line. The gate looks for `lightdm` AND `online` in the same
+# reading, which is the service's own line and nothing else.
 step "the display manager reports online"
   repeat
     do
-      item
-        input text "clear; svcs -H -o state svc:/application/graphical-login/lightdm:default"
-      item
+      item "ask the service manager"
+        input text "clear; svcs -H -o fmri,state svc:/application/graphical-login/lightdm:default"
+        settle 3
+      item "press return on its own"
         input ret
         settle 8
       item "read the screen"
@@ -927,7 +937,7 @@ step "the display manager reports online"
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      words [[online]]
+      words [[lightdm, online]]
     max 30
 
 
