@@ -741,7 +741,7 @@ step "the root role was assumed"
 # is what a person types at that prompt, and the loop below is built to keep answering until the
 # licence page is gone rather than assuming one `y` is enough - some images ask once per publisher.
 step "install the desktop in the root shell"
-  input text "pkg install --accept mate_install > /tmp/pkg.log 2>&1; echo PKG_EXIT=$? | tee /tmp/pkg.exit"
+  input text "pkg install --accept --deny-new-be mate_install > /tmp/pkg.log 2>&1; echo PKG_EXIT=$? | tee /tmp/pkg.exit"
   type_gap 0.05
   settle 3
 
@@ -806,6 +806,25 @@ step "answer the licence pages until the install proceeds"
 # SO THE COMMAND RECORDS ITS STATUS IN /tmp/pkg.exit AS WELL, and a step of its own `cat`s it. A
 # three-word line does not scroll away, and `PKG_EXIT` is still the gate because this console's reader
 # cannot tell `0` from `O` (see the note below).
+# `--deny-new-be` IS WHAT KEEPS THE MACHINE ON THE CONSOLE INSTEAD OF REBOOTING OUT OF IT.
+#
+# MEASURED on run 45707724998: the licence loop was still waiting when the screen turned into the
+# BOOT SEQUENCE of the same machine -
+#
+#	Loading unix... Loading /platform/i86pc/amd64/boot_archive...
+#	Booting... OpenIndiana Hipster 2026.10 Version ...
+#
+# `pkg install` on OpenIndiana creates a new boot environment by default and activates it, and the
+# SMF actuators that follow a large install restart the system. A restart destroys the console this
+# walk drives: `/tmp` is memory, so `/tmp/pkg.exit` goes with the shell that wrote it, and every
+# keystroke after that lands on a login prompt nobody asked for. It is also why reading the file did
+# not help on that run even though the file had been written.
+#
+# `--deny-new-be` tells pkg not to create the boot environment (pkg(1): "Do not create a new boot
+# environment. This operation will fail if this option is specified and the operation requires a new
+# boot environment."). `mate_install` is an ordinary package set and does not require one, so the
+# packages land in the running BE and nothing reboots.
+#
 # `cat` IS INSIDE THE LOOP, BECAUSE THE FILE APPEARS WHEN `pkg` FINISHES AND NOT BEFORE.
 #
 # MEASURED on runs 45694800660 and 45707724998: `pkg install mate_install` takes forty to fifty
