@@ -521,7 +521,11 @@ step "the installed system has reached its login"
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
       scale 1
-      words [["console, login"]]
+      # ONE WORD PER ELEMENT, NOT ONE STRING WITH A COMMA IN IT. `[["console, login"]]` asks the reader
+      # for a single word `console, login` - punctuation and all - which no screen has ever shown. The
+      # wait then ran its whole sixty attempts and the stage died at the login it was waiting for.
+      # MEASURED on run 45665672035: step 46 burned twenty-five minutes and every reading was a miss.
+      words [[console, login]]
     max 60
 
 
