@@ -75,7 +75,7 @@ step "the guest agent answers, which is what makes a graceful shutdown possible"
 # first leaves the running system answering to its old name, and a later stage that resolves it
 # fails for a reason that has nothing to do with the failure.
 step "set the machine's name"
-  ssh "printf '%s\\n' '{{ password }}' | sudo -S -p '' sh -c 'svccfg -s svc:/system/identity:node setprop config/nodename = astring: {{ hostname }} && svccfg -s svc:/system/identity:node refresh && /usr/sbin/svccfg -s svc:/system/identity:node listprop config/nodename && hostname {{ hostname }}'"
+  ssh "pfexec sh -c 'svccfg -s svc:/system/identity:node setprop config/nodename = astring: {{ hostname }} && svccfg -s svc:/system/identity:node refresh && /usr/sbin/svccfg -s svc:/system/identity:node listprop config/nodename && hostname {{ hostname }}'"
   timeout 180
 
 
@@ -88,7 +88,7 @@ step "prove the name, in the service and in the running kernel"
 # both is what makes `date` agree now and after the next reboot, which is the pair a later stage can
 # actually check.
 step "set the time zone"
-  ssh "printf '%s\\n' '{{ password }}' | sudo -S -p '' sh -c 'printf \"TZ={{ timezone }}\\n\" > /etc/TIMEZONE && ln -sf /usr/share/lib/zoneinfo/{{ timezone }} /etc/localtime'"
+  ssh "pfexec sh -c 'printf \"TZ={{ timezone }}\\n\" > /etc/TIMEZONE && ln -sf /usr/share/lib/zoneinfo/{{ timezone }} /etc/localtime'"
   timeout 120
 
 
@@ -101,7 +101,7 @@ step "prove the time zone"
 # takes `LANG` from the login environment; `/etc/default/init` is what a service started at boot
 # inherits.
 step "set the locale"
-  ssh "printf '%s\\n' '{{ password }}' | sudo -S -p '' sh -c 'grep -q \"^LANG=\" /etc/default/init && sed -i \"s|^LANG=.*|LANG={{ locale }}|\" /etc/default/init || printf \"LANG={{ locale }}\\n\" >> /etc/default/init'"
+  ssh "pfexec sh -c 'grep -q \"^LANG=\" /etc/default/init && sed -i \"s|^LANG=.*|LANG={{ locale }}|\" /etc/default/init || printf \"LANG={{ locale }}\\n\" >> /etc/default/init'"
   timeout 120
 
 
@@ -116,12 +116,12 @@ step "prove the guest can fetch from the host share"
 
 
 step "flush the writes before anything else"
-  ssh "sudo sync"
+  ssh "pfexec sync"
   timeout 300
 
 
 step "flush the writes before the machine stops"
-  ssh "sudo sync"
+  ssh "pfexec sync"
   timeout 300
 
 

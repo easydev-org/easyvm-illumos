@@ -61,22 +61,48 @@ step "prove the boot environment is the one that was installed"
   timeout 120
 
 
+# WHETHER THIS ACCOUNT CAN RAISE PRIVILEGE IS A FACT ABOUT THE INSTALLER, NOT ABOUT THIS WALK, AND
+# THE FIRST RUN SHOWED IT HAD NEVER BEEN CHECKED.
+#
+# MEASURED on 45612202261: the step after these read `bash: line 1: sudo: command not found`, which
+# says illumos has no sudo - it raises privilege with `pfexec` - and says nothing about whether
+# `vmuser` is ENTITLED to pfexec. OpenIndiana's text installer creates the user it is given as an
+# ordinary account and puts no profile on it, so `pfexec` can answer "not privileged" just as
+# readily. Printing all three facts here means the next failure is a line in this log rather than an
+# inference.
+#
+# THE STEP CANNOT FAIL ON THE ANSWER. `command -v` and `id` are being REPORTED, not asserted: a
+# machine whose account is not privileged is still a machine this stage has to describe accurately.
+step "report how this account could raise privilege"
+  ssh "sh -c 'echo \"sudo:   $(command -v sudo || echo none)\"; echo \"pfexec: $(command -v pfexec || echo none)\"; echo \"id:     $(id)\"; echo \"profiles:\"; profiles 2>/dev/null || echo \"  (no profiles command)\"'"
+  timeout 120
+
+
 # THE DESKTOP IS WHAT THIS STAGE ADDS, AND IT IS INSTALLED THE WAY OPENINDIANA INSTALLS THINGS.
+#
+# `pfexec`, NOT `sudo`, AND THE FIRST RUN IS WHAT SAID SO. MEASURED on run 45612202261, steps 1-5 all
+# passed - `uname -a` answered `SunOS openindiana 5.11 illumos-c893fd03ad`, `id -un` answered
+# `vmuser`, `beadm list` showed the installed boot environment - and then step 6 died:
+#
+#	ssh: sudo pkg install -y solaris-desktop -> 127
+#	  bash: line 1: sudo: command not found
+#
+# illumos DOES NOT SHIP sudo. Privilege is raised with `pfexec`, which consults the profile held in
+# the user's entry rather than asking for a password, so the `printf | sudo -S` idiom this repository
+# uses on FreeBSD and Linux has no place here at all.
 #
 # `solaris-desktop` IS THE PUBLISHER'S OWN GROUP for the GNOME desktop rather than a list of
 # packages, because naming them one by one is how a desktop ends up installed but unusable - a
 # session file with nothing to start it.
 #
-# NOTE: THIS WALK HAS NOT BEEN RUN. Nothing in it is measured yet, unlike every comment above it in
-# this repository, and the first run is what turns it into a claim: the group's name, whether `gdm`
-# is the display manager that ships with it, and how long `pkg` takes against the network are all
-# things to read off that run rather than to assert here. `solaris-desktop` is the group name this
-# stage was written against.
+# NOTE: THE PACKAGE STEP ITSELF HAS NOT REACHED THE NETWORK YET. What is measured here is everything
+# up to it; the group's name, whether `gdm` is the display manager that ships with it, and how long
+# `pkg` takes are what the NEXT run has to confirm.
 #
 # THE TIMEOUT IS LONG BECAUSE `pkg` RESOLVES AGAINST THE NETWORK. Ninety minutes is the ceiling a
 # leg has, not an expectation.
 step "install the desktop"
-  ssh "sudo pkg install -y solaris-desktop"
+  ssh "pfexec pkg install -y solaris-desktop"
   timeout 5400
 
 
@@ -91,7 +117,7 @@ step "the display manager is the one that starts"
 
 
 step "enable the display manager at boot"
-  ssh "sudo svcadm enable svc:/application/graphical-login/gdm:default"
+  ssh "pfexec svcadm enable svc:/application/graphical-login/gdm:default"
   timeout 180
 
 
@@ -122,12 +148,12 @@ step "the desktop is on screen"
 
 
 step "flush the writes before anything else"
-  ssh "sudo sync"
+  ssh "pfexec sync"
   timeout 300
 
 
 step "flush the writes before the machine stops"
-  ssh "sudo sync"
+  ssh "pfexec sync"
   timeout 300
 
 
