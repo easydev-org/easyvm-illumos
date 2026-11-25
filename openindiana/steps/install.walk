@@ -744,7 +744,7 @@ step "answer the licence pages until the install proceeds"
           name licensed
           rect [0, 0, 1024, 768]
           rect_at [1024, 768]
-          words [["CDDL"], [PUBLIC, LICENSE]]
+          words [[CDDL], [PUBLIC, LICENSE], [Government, Rights], [GOVERNMENT, RIGHTS]]
       item "say yes whenever the licence is on screen"
         if licensed
           then
@@ -761,7 +761,7 @@ step "answer the licence pages until the install proceeds"
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      without [CDDL, "PURSUANT TO SECTION 9"]
+      without [CDDL, "PURSUANT TO SECTION 9", "Government Rights", "GOVERNMENT RIGHTS"]
       words [[PKG_EXIT]]
     max 40
 
