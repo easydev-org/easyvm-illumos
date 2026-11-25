@@ -80,24 +80,128 @@ step "prove the boot environment is the one that was installed"
   timeout 120
 
 
-# THE ROLE IS ASSUMED HERE, AND ONE COMMAND INSIDE IT GRANTS WHAT `pkg` CHECKS.
+# THE ROLE IS ASSUMED AT THE CONSOLE, FROM THE ACCOUNT THAT CAN LOG IN THERE.
 #
-# `su -` WITH NO USER NAME ASSUMES THE ROOT ROLE for an account that is a member of it. The install
-# walk set vmuser's password to this same `{{ password }}`, so a non-interactive `su` can be spelled
-# with `-c` - but `su` still reads a password from stdin unless the caller is already authorized, so
-# the password goes through `-c` the way it goes through every other prompt on this system.
+# TWO MEASURED FACTS DECIDE THE SHAPE OF THIS, AND EACH KILLED A PREVIOUS ATTEMPT:
 #
-# `printf '%s\n'` RATHER THAN `echo` because the password is data: a value starting with `-` or
-# containing a backslash is a different string to `echo` than to the reader.
+#	`su -c` IS NOT A THING HERE. MEASURED on the 6b300e1 run:
 #
-# THE AUTHORIZATION IS THE ONE THE THIRD RUN NAMED AS MISSING. `auths` listed five entries and
-# `solaris.admin.packager` was not among them; `usermod -A` APPENDS it and leaves the rest alone.
-step "assume the root role and grant the packager authorization"
-  ssh "printf '%s\n' '{{ password }}' | su -c 'usermod -A +solaris.admin.packager {{ user }}'"
-  timeout 300
+#		ssh: printf '%s\n' 'admin' | su -c 'usermod -A ...' -> 1
+#		Usage: su [-] [ username [ arg ... ] ]
+#
+#	illumos `su` takes a USERNAME and then ARGUMENTS for that user's shell - there is no `-c`.
+#
+#	AND `su` DOES NOT READ A PASSWORD FROM A PIPE ANYWAY: it opens the terminal, so a password sent
+#	down stdin is never seen. That is why the assumption happens on the CONSOLE, which IS a
+#	terminal, rather than over ssh, which is not.
+#
+# THE ACCOUNT IS `vmuser`, NOT `root`. The 368f6db run typed `root` at that prompt and the console
+# answered, in its own words:
+#
+#	Roles can only be assumed by authorized users
+#	Login incorrect
+#	login account failure: Permission denied
+#
+# `vmuser` is the account the installer created, its password is this `{{ password }}`, and every run
+# since 45612202261 has authenticated with it. So the console logs in as vmuser and then ASSUMES the
+# root role with `su`, which is the operation illumos RBAC defines for exactly this.
+#
+# EACH KEYSTROKE GROUP IS ITS OWN STEP WITH A SETTLE, because a console echoes no password and gives
+# no newline until Return. The checks read the SCREEN rather than matching a word that the prompt
+# itself contains - the 368f6db run's `words [[root]]` passed on the login prompt's own text.
+step "log in at the console as the account that exists"
+  input text "{{ user }}"
+  type_gap 0.1
+  settle 2
 
 
-# THE PROOF IS THE SAME COMMAND THAT WAS EMPTY BEFORE, RUN FROM A NEW SESSION.
+step "take the login name"
+  input ret
+  settle 6
+
+
+step "type the account password"
+  input text "{{ password }}"
+  type_gap 0.1
+  settle 2
+
+
+step "take the password"
+  input ret
+  settle 10
+
+
+step "read what the console says after logging in"
+  read
+    name after_login
+
+
+step "the console is a shell, not a refusal"
+  check
+    source after_login
+    mode text
+    rect [0, 0, 1920, 400]
+    rect_at [1920, 1080]
+    words [[$]]
+    without [incorrect, "Permission denied"]
+    name console_shell
+
+
+step "assume the root role"
+  input text "su -"
+  type_gap 0.1
+  settle 2
+
+
+step "send the role request"
+  input ret
+  settle 6
+
+
+step "type the root role password"
+  input text "{{ password }}"
+  type_gap 0.1
+  settle 2
+
+
+step "take the role password"
+  input ret
+  settle 10
+
+
+step "read what the console says after su"
+  read
+    name after_su
+
+
+step "the root role was assumed"
+  check
+    source after_su
+    mode text
+    rect [0, 0, 1920, 400]
+    rect_at [1920, 1080]
+    without [incorrect, "Permission denied", "can only be assumed"]
+    words [[root]]
+    name role_assumed
+
+
+# THE AUTHORIZATION IS GRANTED IN THE CONSOLE'S ROLE AND PROVEN OVER SSH.
+#
+# Both halves are needed: `usermod` must run with privilege, which only the assumed role has, and the
+# result must be visible to a NEW ssh session, which is where `pkg` runs. Doing the grant over the
+# console and the proof over ssh also keeps the two independent - a session that inherited the
+# authorization could not be evidence that it was granted.
+step "grant the packager authorization in the role"
+  input text "usermod -A +solaris.admin.packager {{ user }}"
+  type_gap 0.1
+  settle 2
+
+
+step "run the grant"
+  input ret
+  settle 8
+
+
 step "prove a fresh session carries the authorization"
   ssh "auths"
   timeout 60

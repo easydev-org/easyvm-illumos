@@ -1,0 +1,305 @@
+# OMN iOS r151060, THE TEXT INSTALLER, DRIVEN TO AN INSTALLED DISK.
+#
+# THIS INSTALLER IS A TUI, AND IT IS DRIVEN PURELY BY THE KEYBOARD. THERE IS NO MOUSE PATH AT ALL.
+# MEASURED on the pod against omnios-r151060.iso, 2026-11-25: a click on the `>` button at (530, 518)
+# left the screen byte-identical, and a single `ret` moved the page on. Every page below is therefore
+# `ret` / `spc` / the arrow keys and nothing else.
+#
+# THE PAGES, IN ORDER, EACH MEASURED:
+#
+#	1  select a keyboard layout        US-English is the default and already highlighted -> ret
+#	2  welcome / main menu             "Find disks, create rpool, and install OmniOS" is row 1 -> ret
+#	3  select disks for installation   the virtio disk is `[ ]` and needs `spc` to become `[*]` -> ret
+#	4  ZFS root pool configuration     rpool / UEFI / YES are the recommended values -> ret
+#	5  enter the system hostname       `omnios` is prefilled, the cursor at its end -> ret
+#	6  identify a location             a continent list, UTC is the last row and preselected -> ret
+#	7  is the information OK?          TZ='UTC' summary, `Yes` is preselected -> ret
+#	8  installing ZFS image            0% .. 100%, then "Updating boot archive"
+#
+# PAGE 7 IS THE ONE THAT IS EASY TO MISS. After the time zone summary the installer asks
+# "Is the above information OK?" with `< Yes >` and `< No >` on one line, and `Yes` is where the
+# cursor already is. A `ret` there is what starts the write; without it the run sits on the summary
+# until its budget is gone.
+#
+# THE WRITE ITSELF IS 24 GiB OF ZFS IMAGE AND THEN A BOOT ARCHIVE REBUILD. `Installing ZFS image`
+# reaches 100% in roughly three minutes on the pod, and the box then changes to
+# `Updating boot archive`, which takes several minutes more. A `stop kill` BETWEEN THOSE TWO IS A
+# BROKEN DISK: MEASURED, killing at the point "Installing ZFS image" showed 100% produced a disk
+# whose loader answered
+#
+#	No rootfs module provided, aborting
+#	ok
+#
+# so this walk waits for the boot archive line and then a long settle, and never stops early.
+#
+# 1024x768 IS DELIBERATE. The text console renders 80x25 characters at the firmware's font size and
+# every read below is a 1024x768 frame. `-device VGA,xres=1024,yres=768` is what makes that true.
+walkthrough "omnios r151060 - the text installer to an installed disk"
+resolution 1024x768
+recording_resolution 1024x768
+
+var user
+  default vmuser
+  from args.user
+
+password admin
+
+var out
+  default out/omnios-install.qcow2
+  from args.out
+
+
+step "the media is on disk"
+  needs [omnios-r151060.iso]
+
+
+step "create the empty disk"
+  disk
+    file disk.qcow2
+    size 24
+
+
+step "boot the installer"
+  boot
+    machine "q35,accel=kvm,vmport=off"
+    args [["-cpu", "Skylake-Client-v4"], ["-smp", "4"], ["-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd"], ["-drive", "if=pflash,format=raw,file=OVMF_VARS.fd"], ["-m", "4096"], ["-chardev", "socket,id=qga0,path=qga.sock,server=on,wait=off"], ["-device", "isa-serial,chardev=qga0"], ["-device", "VGA,xres=1024,yres=768"], ["-device", "qemu-xhci,id=xhci"], ["-device", "usb-tablet,bus=xhci.0"], ["-device", "usb-kbd,bus=xhci.0"], ["-drive", "file=omnios-r151060.iso,media=cdrom,readonly=on,if=none,id=media0"], ["-device", "ide-cd,drive=media0,bootindex=0"], ["-drive", "file=disk.qcow2,if=none,format=qcow2,id=target"], ["-device", "virtio-blk-pci,drive=target,bootindex=1"]]
+    timeout 1800
+
+
+# THE FIRST THING ON SCREEN IS THE LOADER'S MENU, NOT THE INSTALLER. It clears itself on a four second
+# autoboot, then the kernel loads, the boot archive unpacks, and the keyboard list appears - measured
+# at about two and a half minutes from `boot`. The words below are the keyboard page's own, so the
+# loader menu cannot satisfy them.
+step "the keyboard question is on screen"
+  repeat
+    do
+      item
+        settle 20
+      item "read the screen"
+        read
+          name kb
+    until
+      bind up
+      source kb
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[Please, select, a, keyboard, layout]]
+    max 90
+
+
+step "US-English is the highlighted row"
+  input ret
+  settle 12
+
+
+step "the main menu, its first row selected"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name menu
+    until
+      bind up
+      source menu
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[Find, disks, create, rpool, and, install, OmniOS]]
+    max 40
+
+
+step "find the disks and install"
+  input ret
+  settle 14
+
+
+step "the disk page is up, the virtio disk unticked"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name disks
+    until
+      bind up
+      source disks
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[Select, disks, for, installation], [Virtio, Block, Device]]
+    max 40
+
+
+# THE PAGE'S OWN INSTRUCTION IS "Select disks using arrow keys and space bar". `spc` is what turns
+# `[ ]` into `[*]`; a `ret` here would leave the disk unselected and the next page would have no pool
+# to offer. MEASURED: with one `spc` the row reads `[*] c2t0d0 Virtio_Block_Device 24.00 GiB`.
+step "tick the virtio disk with space"
+  input spc
+  settle 5
+
+
+step "continue with the ticked disk"
+  input ret
+  settle 14
+
+
+step "the ZFS page is up, all recommended"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name zfs
+    until
+      bind up
+      source zfs
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[ZFS, Root, Pool, Configuration], [Partitioning, Scheme]]
+    max 40
+
+
+# rpool, UEFI and Compression YES are the values the page fills in itself, and Continue is where the
+# cursor starts.
+step "take the recommended pool settings"
+  input ret
+  settle 14
+
+
+step "the hostname page is up, prefilled omnios"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name hostname
+    until
+      bind up
+      source hostname
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[Enter, the, system, hostname], [omnios]]
+    max 40
+
+
+step "keep the hostname"
+  input ret
+  settle 14
+
+
+step "the time zone page is up"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name tz
+    until
+      bind up
+      source tz
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[Please, identify, a, location], [UTC]]
+    max 40
+
+
+# UTC IS THE LAST ROW OF THE CONTINENT LIST AND THE ONE THE CURSOR IS ON, which is also the only
+# honest answer for a machine whose clock is the runner's.
+step "UTC"
+  input ret
+  settle 12
+
+
+step "the time zone summary asks if it is OK"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name summary
+    until
+      bind up
+      source summary
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[Is, the, above, information, OK], ["TZ='UTC'"]]
+    max 40
+
+
+# THIS `ret` IS WHAT STARTS THE WRITE. `Yes` is where the cursor already is.
+step "yes, the time zone is right"
+  input ret
+  settle 20
+
+
+step "the ZFS image is being written"
+  repeat
+    do
+      item
+        settle 15
+      item "read the screen"
+        read
+          name writing
+    until
+      bind up
+      source writing
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[Installing, ZFS, image]]
+    max 80
+
+
+# THE BOOT ARCHIVE REBUILD IS THE TAIL OF THE INSTALL AND IT IS NOT SKIPPABLE. See the header: a disk
+# killed between the image and the archive cannot start. MEASURED at roughly six minutes for the image
+# and four more for the archive on the pod, so this settles for ten and then reads what the page says.
+step "let the image and the boot archive finish"
+  settle 600
+
+
+step "the installer has finished writing"
+  repeat
+    do
+      item
+        settle 15
+      item "read the screen"
+        read
+          name done
+    until
+      bind up
+      source done
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[Updating, boot, archive], [Installation, complete]]
+    max 60
+
+
+step "stop the machine"
+  stop kill
+  timeout 120
+
+
+step "publish the disk"
+  save "{{ out }}"
