@@ -87,22 +87,37 @@ step "report how this account could raise privilege"
 #	ssh: sudo pkg install -y solaris-desktop -> 127
 #	  bash: line 1: sudo: command not found
 #
-# illumos DOES NOT SHIP sudo. Privilege is raised with `pfexec`, which consults the profile held in
-# the user's entry rather than asking for a password, so the `printf | sudo -S` idiom this repository
-# uses on FreeBSD and Linux has no place here at all.
+# illumos DOES NOT SHIP sudo. Privilege is raised with `pfexec`, and the step above now PROVES this
+# account may use it - MEASURED on run 45613187768:
+#
+#	pfexec: /usr/bin/pfexec
+#	id:     uid=101(vmuser) gid=10(staff)
+#	profiles: Basic Solaris User, All
+#
+# so no password is piped anywhere; `pfexec` reads the profile from the user's own entry.
+#
+# `--accept`, NOT `-y`, AND THE SAME RUN IS WHAT SAID SO. MEASURED on 45613187768, the step after the
+# profile report:
+#
+#	pkg install: illegal option -- y
+#	Usage: pkg install [-nvq] [-C n] [-g path_or_uri ...] [--accept]
+#	                   [--licenses] ...
+#
+# `pkg` is IPS and takes `--accept` for "do not ask me to confirm"; `--licenses` is the second
+# consent a publisher's own packages need, and a desktop group certainly has one.
 #
 # `solaris-desktop` IS THE PUBLISHER'S OWN GROUP for the GNOME desktop rather than a list of
 # packages, because naming them one by one is how a desktop ends up installed but unusable - a
 # session file with nothing to start it.
 #
-# NOTE: THE PACKAGE STEP ITSELF HAS NOT REACHED THE NETWORK YET. What is measured here is everything
-# up to it; the group's name, whether `gdm` is the display manager that ships with it, and how long
-# `pkg` takes are what the NEXT run has to confirm.
+# NOTE: THE PACKAGE STEP HAS NOT REACHED THE NETWORK YET. What is measured is everything up to it,
+# including the two option spellings above; the group's name and whether `gdm` is the display
+# manager that ships with it are what the next run has to confirm.
 #
 # THE TIMEOUT IS LONG BECAUSE `pkg` RESOLVES AGAINST THE NETWORK. Ninety minutes is the ceiling a
 # leg has, not an expectation.
 step "install the desktop"
-  ssh "pfexec pkg install -y solaris-desktop"
+  ssh "pfexec pkg install --accept --licenses solaris-desktop"
   timeout 5400
 
 
