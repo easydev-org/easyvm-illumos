@@ -258,10 +258,21 @@ step "the root role was assumed"
 # `solaris-desktop` successfully - `pkg` returned 0 - and `/usr/share/xsessions/gnome.desktop` was
 # still absent afterwards, because nothing had been installed under that name at all.
 #
+# `yes |` AND A LOG FILE, BECAUSE `pkg` ASKS A QUESTION THE CONSOLE CANNOT SEE THE END OF.
+#
+# MEASURED on run 45630040587, which waited properly and then read `PKG_EXIT=1`: the screen held an
+# entire licence agreement - `LOSS OF GOODWILL, WORK STOPPAGE...`, `OR CONSEQUENTIAL DAMAGES` - so
+# `pkg` had stopped to ask whether the terms were accepted and refused on its own timeout. The console
+# is a screen this walk types at, not a terminal a person scrolls, so a prompt hundreds of lines down
+# cannot be answered there.
+#
+# `yes` ANSWERS IT, and `--accept` still carries "do not ask me to confirm the install". Redirection to
+# a file keeps that agreement out of the recording, and `tail -5` puts the part that matters - the last
+# five lines of the real outcome - back on the console where the exit line is read from.
 # `-r` ON THE ENABLE IS NOT OPTIONAL: it restarts the service and the ones that depend on it, which is
 # what makes lightdm actually come up rather than record that it should.
 step "install the desktop in the root shell"
-  input text "pkg install --accept --licenses mate_install; echo PKG_EXIT=$?"
+  input text "yes | pkg install --accept --licenses mate_install > /tmp/pkg.log 2>&1; echo PKG_EXIT=$?; tail -5 /tmp/pkg.log"
   type_gap 0.05
   settle 3
 
