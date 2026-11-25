@@ -834,24 +834,35 @@ step "answer the licence pages until the install proceeds"
 # `/tmp/pkg.exit` is written by the command itself (`| tee /tmp/pkg.exit`) and holds three words. It is
 # the only record that survives the scroll, and a `cat` that runs before the file exists simply prints
 # an error - so the cat is repeated rather than assumed.
-step "the recorded status is the line the loop saw"
+# THE GATE IS THE DESKTOP FILE ITSELF, NOT `pkg`'S EXIT CODE.
+#
+# MEASURED on run 45711557879. `PKG_EXIT` WAS MATCHED ON THE FIRST ATTEMPT while the console still
+# read `Loading unix... Booting...` - the word came from somewhere in the boot text, not from the
+# install, and the stage then failed at `ls /usr/share/xsessions/mate.desktop: No such file or
+# directory`. A gate that a four-letter token in a boot log can satisfy is not a gate.
+#
+# `MATE_SESSION_OK` IS A WORD THIS CONSOLE CANNOT PRODUCE BY ACCIDENT. It is printed only when
+# `/usr/share/xsessions/mate.desktop` exists, which is the thing `pkg install mate_install` is FOR -
+# so the loop waits for the outcome rather than for a status line about it, and it can be asked again
+# every ten seconds for as long as the install takes.
+step "the desktop is installed, asked of the disk until it is"
   repeat
     do
-      item "ask the file where the install got to"
-        input text "clear; cat /tmp/pkg.exit 2>/dev/null"
+      item "ask the disk whether the session file is there"
+        input text "clear; [ -f /usr/share/xsessions/mate.desktop ] && echo MATE_SESSION_OK || echo MATE_SESSION_WAIT"
       item
         input ret
-        settle 8
+        settle 10
       item "read the screen"
         read
-          name pkgfile
+          name matefile
     until
       bind up
-      source pkgfile
+      source matefile
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      words [[PKG_EXIT]]
+      words [[MATE_SESSION_OK]]
     max 400
 
 
