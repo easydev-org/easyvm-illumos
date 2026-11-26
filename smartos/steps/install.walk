@@ -241,7 +241,7 @@ step "the shell is a root prompt"
 # SO THE FILL CREATES ITS OWN DATASET WITH `compression=off`, and the data lands on the disk as
 # itself. `dd` then `sync` then the echo, so `PADDED` is not printed until the bytes are on disk.
 step "give the pool the space the published artifact is measured by"
-  input text "zfs create -o compression=off -o mountpoint=/zones/artifact zones/artifact; dd if=/dev/urandom of=/zones/artifact/floor bs=1m count=1500 2>/dev/null; sync; echo PADDED"
+  input text "zfs create -o compression=off -o mountpoint=/zones/artifact zones/artifact && dd if=/dev/urandom of=/zones/artifact/floor bs=1048576 count=1500 && sync && echo PADDED"
   settle 2
 
 
