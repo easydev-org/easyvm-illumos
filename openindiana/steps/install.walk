@@ -40,6 +40,9 @@
 walkthrough "openindiana 2026.10 gui - its live desktop, its graphical installer, an installed desktop"
 resolution 1024x768
 recording_resolution 1024x768
+# THE LIVE IMAGE CAN TAKE ELEVEN MINUTES TO UNPACK ITSELF (MEASURED), SO THE RUN'S OWN BOOT BUDGET IS
+# RAISED TO MATCH RATHER THAN LEFT AT THE ENGINE DEFAULT.
+boot_timeout 20m
 var disk_gb
   default "25"
   from args.disk_gb
@@ -84,17 +87,53 @@ step "the loader has handed over to the kernel"
   until "Loading unix"
   from console
   timeout 420
-# THERE IS NO LANGUAGE LIST HERE. THE OLD TEXT INSTALLER HAD ONE, AND ITS THREE STEPS WERE LEFT
-# BEHIND WHEN THIS FILE BECAME THE GUI FLOW - BEFORE the live desktop step, so they ran while the
-# guest was still booting.
+# THE GUI ISO STILL OPENS WITH THE TEXT LANGUAGE MENU, AND THIS STEP ANSWERS IT.
 #
-# MEASURED on run 45849396700, step 5/38: forty attempts of `input ret` against a screen that was
-# already the MATE desktop ("Computer  jack's Home  Openindiana_Live_ X86  Trash"), waiting for
-# words that only exist in a text installer this medium does not have. The walk could never get past
-# it, which is why no GUI-ISO run has ever finished.
+# MEASURED on run 45851721105, whose last frame is that menu:
 #
-# THE INSTALLER IS STARTED FROM A TERMINAL, LATER IN THIS FILE (`sudo gui-install`), and its own
-# first page is where the language is chosen. Nothing here needs to press Return.
+#	1. Chinese - Simplified      7. Japanese
+#	2. Chinese - Traditional     8. Korean
+#	3. English                   9. Portuguese - Brazil
+#	4. French                   10. Russian
+#	5. German                   11. Spanish
+#	6. Italian                  12. Swedish
+#	To select the language you wish to use, enter a number [default is 3]:
+#
+# TWO RUNS WERE NEEDED TO SEE WHY NO RUN EVER PASSED IT. Run 45849396700's frame is the MATE
+# DESKTOP, not this menu: its forty `input ret` attempts had already dismissed the menu (3 is the
+# default, so every Return accepted English) and moved the guest on, so its gate for
+# "Chinese"/"Swedish" could never match a screen that had scrolled past them - and the walk then
+# failed on the desktop it had created.
+#
+# SO THIS STEP READS AND ONLY READS. The menu waits for an answer; the two steps after it give one.
+step "the language menu is up"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name lang
+    until
+      bind up
+      source lang
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[Chinese, Simplified], [Swedish]]
+    max 60
+
+
+step "type 3, which is English"
+  input text "3"
+  settle 3
+
+
+step "take it"
+  input ret
+  settle 10
+
 
 step "the live mate desktop is on screen"
   repeat
@@ -112,7 +151,7 @@ step "the live mate desktop is on screen"
       rect_at [1024, 768]
       scale 1
       words [[Applications], [Places], [System]]
-    max 90
+    max 120
 
 
 # THE INSTALLER IS STARTED THROUGH `Run Application`, AND THAT IS THE ONLY PATH THAT WAS STABLE.
@@ -358,51 +397,75 @@ step "the users page is up"
     max 40
 
 
-step "root password"
+step "root password - click the field"
   input
     click [460, 208]
     click_at [1024, 768]
-    text "{{ password }}"
   settle 2
 
 
-step "root password again"
+step "root password - type it"
+  input text "{{ password }}"
+  settle 2
+
+
+step "root password again - click the field"
   input
     click [460, 243]
     click_at [1024, 768]
-    text "{{ password }}"
   settle 2
 
 
-step "the user's real name"
+step "root password again - type it"
+  input text "{{ password }}"
+  settle 2
+
+
+step "the user's real name - click the field"
   input
     click [460, 326]
     click_at [1024, 768]
-    text "{{ user }}"
   settle 2
 
 
-step "the user's log-in name"
+step "the user's real name - type it"
+  input text "{{ user }}"
+  settle 2
+
+
+step "the user's log-in name - click the field"
   input
     click [460, 362]
     click_at [1024, 768]
-    text "{{ user }}"
   settle 2
 
 
-step "the user's password"
+step "the user's log-in name - type it"
+  input text "{{ user }}"
+  settle 2
+
+
+step "the user's password - click the field"
   input
     click [460, 397]
     click_at [1024, 768]
-    text "{{ password }}"
   settle 2
 
 
-step "the user's password again"
+step "the user's password - type it"
+  input text "{{ password }}"
+  settle 2
+
+
+step "the user's password again - click the field"
   input
     click [460, 432]
     click_at [1024, 768]
-    text "{{ password }}"
+  settle 2
+
+
+step "the user's password again - type it"
+  input text "{{ password }}"
   settle 2
 
 
