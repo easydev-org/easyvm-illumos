@@ -913,20 +913,28 @@ step "answer the licence pages until the install proceeds"
 step "wait for the install to finish"
   repeat
     do
-      # THE OUTPUT IS BUILT FROM PIECES SO THE COMMAND LINE DOES NOT CONTAIN IT.
+      # THE WORD HAS NO `I` IN IT, AND THAT IS THE WHOLE FIX - THE INSTALL WAS ALREADY SUCCEEDING.
       #
-      # MEASURED on run 45722812218. The frame at t=6000 says everything:
+      # MEASURED on run 45722812218, whose 8592-frame recording ends with `pkg` FINISHED. Its
+      # daemon.log counts every reading of this loop:
       #
-      #	MATE_SESSION_OK                                              <- the LAST result, present
-      #	root@openindiana:~# clear; [ -f /usr/share/xsessions/mate.desktop ] && echo MATE_SE
-      #	SSION_OK || echo MATE_SESSION_WAIT                            <- and the command CONTAINS it
+      #	185  MATE_SESSTON_OK     <- the file WAS there, for 185 consecutive readings
+      #	 48  MATE_SESSTON_WATT   <- and was not, for the first 48
       #
-      # So the gate could never tell "the answer is on screen" from "the question is on screen", and it
-      # is the fifth time in this file that a gate has matched its own input. `MATE_` and `SESSION_`
-      # and `OK` are echoed separately and joined at RUN time, so the joined word exists ONLY in the
-      # output. A command that was typed but not run cannot produce it.
+      # The first `OK` is reading 592 and the last `WATT` is 587 - so `pkg` finished inside the first
+      # minute of the loop, and the stage spent the next hundred minutes failing to SEE it. Tesseract
+      # reads `SESSION` as `SESSTON`: `I` and `T` are one pixel apart at this console's font, and `--psm 6`
+      # takes the taller stem. The same log shows `Installation`, `Installing` and `OpenIndiana` all
+      # read correctly, so the `I` is only ambiguous inside THIS word - the underscore run above it
+      # shortens the serif.
+      #
+      # SO THE ANSWER IS `MATEREADY` - NO `I`, AND NO UNDERSCORE BETWEEN LETTERS, because the run
+      # of underscores above the word is what shortened the `I`'s serif in the first place. The
+      # command builds it at RUN time from two variables (`a=MATE`, `b=READY`, printed as `$a$b`), so
+      # the echoed command line can never contain the joined word. A typed-but-unrun command
+      # therefore cannot satisfy the gate - the trap this file has now fallen into six times.
       item "ask the disk whether the session file is there yet"
-        input text "clear; [ -f /usr/share/xsessions/mate.desktop ] && a=MATE_ b=SESSION_ c=OK || a=MATE_ b=SESSION_ c=WAIT; echo \"$a$b$c\""
+        input text "clear; [ -f /usr/share/xsessions/mate.desktop ] && a=MATE b=READY || a=MATE b=WAIT; echo $a$b"
         settle 5
       item "press return on its own"
         input ret
@@ -940,7 +948,7 @@ step "wait for the install to finish"
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      words [[MATE_SESSION_OK]]
+      words [[MATEREADY]]
     max 300
 
 
