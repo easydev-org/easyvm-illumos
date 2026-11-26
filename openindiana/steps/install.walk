@@ -968,15 +968,30 @@ step "wait for the install to finish"
 #
 # 0.12s PER KEY IS THE TYPE GAP THE OTHER CONSOLE STEPS USE, and the settle is 8 - four seconds of
 # margin over the worst case at that speed, which is what makes the Return land after the last key.
+# THE ENABLE IS ISSUED AS ITS OWN SHORT LINE, AND THE MEASUREMENT IS THE `disabled` THAT FOLLOWED.
+#
+# MEASURED on run 45741233694: the run reached this step and the frame after it read
+#
+#	svc:/application/graphical-login/lightdm:default disabled
+#
+# - the service name is right and the state is `disabled`, so `svcadm enable` did not run. The line
+# that was supposed to run it is 88 characters with `-r`, a colon, two slashes and a `;` - and this
+# console has already been measured losing Returns on lines of that length (the 107-character pkg
+# line, the 120-character printf line). The trailing `; echo DM_EXIT=$?` made it longer still, and
+# there is no DM_EXIT in the log at all.
+#
+# SO THE COMMAND IS SPLIT: `svcadm enable` with its target on ONE short line (60 characters, and
+# `enable` alone is enough - `-r` only restarts dependants, which a freshly-installed service has
+# none of), and the state is read in the gate below where it belongs.
 step "enable the display manager in the root shell"
-  input text "svcadm enable -r svc:/application/graphical-login/lightdm:default; echo DM_EXIT=$?"
+  input text "svcadm enable svc:/application/graphical-login/lightdm"
   type_gap 0.12
   settle 8
 
 
 step "run the enable"
   input ret
-  settle 10
+  settle 12
 
 
 # THE STATE IS ASKED AT THE CONSOLE, NOT OVER SSH, FOR THE REASON THE STEP ABOVE DOCUMENTS:
