@@ -213,16 +213,27 @@ step "the shell is a root prompt"
 # is the one thing a compressor removes completely. So the floor check saw the artifact, not the
 # working disk, and refused it.
 #
-# `/dev/urandom` cannot be compressed away. 560 MiB of it costs about fifteen seconds on this guest
-# and survives `save` as itself.
+# THE FILL HAS TO SURVIVE `save`, AND `save` IS `qemu-img convert -c -o compression_type=zstd`.
+#
+# MEASURED twice:
+#
+#	560 MiB of ZEROS     disk 635 MiB -> artifact 224 MiB   (zeros compressed to nothing)
+#	560 MiB of RANDOM    disk 651 MiB -> artifact 226 MiB   (zstd still takes 65% of it)
+#
+# So the floor is applied to a COMPRESSED artifact and the fill has to be big enough that its
+# compressed form clears 512 MiB. At the ratio measured here that is about 1.6 GiB of urandom, which
+# this guest writes in under a minute and which lands the artifact near 600 MiB.
+#
+# THE SIZE IS NOT A TUNING KNOB FOR THE ENGINE: it is what makes this disk's artifact comparable with
+# every other guest's, all of which are packed the same way.
 step "give the pool the space the published artifact is measured by"
-  input text "dd if=/dev/urandom of=/zones/artifact-floor bs=1m count=560 >/dev/null 2>&1; sync; echo FILLED"
+  input text "dd if=/dev/urandom of=/zones/artifact-floor bs=1m count=1700 >/dev/null 2>&1; sync; echo FILLED"
   settle 2
 
 
 step "run the fill"
   input ret
-  settle 30
+  settle 60
 
 
 step "stop the machine"
