@@ -591,7 +591,8 @@ step "the install finishes and the disk's own loader comes up"
   repeat
     do
       item "wake the panel, which blanks before it locks"
-        input click [512, 400]
+        input
+          click [512, 400]
         settle 3
       item "read the screen"
         read
