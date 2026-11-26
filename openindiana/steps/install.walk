@@ -952,10 +952,26 @@ step "wait for the install to finish"
     max 300
 
 
+# THE COMMAND IS TYPED SLOWER AND THE RETURN WAITS LONGER, BECAUSE 78 CHARACTERS AT 0.05s PER KEY
+# ARRIVE SLOWER THAN A THREE-SECOND SETTLE.
+#
+# MEASURED on run 45741233694, whose last frame shows the command stopped mid-word with the cursor at
+# the end of it:
+#
+#	root@openindiana:~# clear; svcs -H -o fmri,state svc:/application/graphical-login/l
+#	lightdm:defa                                                       <- the enable never ran
+#
+# and the service it never enabled answered `disabled` for the whole forty attempts of the gate below
+# - which is the CORRECT answer to a command that was typed and not executed. THIS IS THE SAME DEFECT
+# AS `pkg install`: typing and Return are two actions, and a long line is still arriving when the
+# Return is sent.
+#
+# 0.12s PER KEY IS THE TYPE GAP THE OTHER CONSOLE STEPS USE, and the settle is 8 - four seconds of
+# margin over the worst case at that speed, which is what makes the Return land after the last key.
 step "enable the display manager in the root shell"
   input text "svcadm enable -r svc:/application/graphical-login/lightdm:default; echo DM_EXIT=$?"
-  type_gap 0.05
-  settle 3
+  type_gap 0.12
+  settle 8
 
 
 step "run the enable"
@@ -978,12 +994,17 @@ step "run the enable"
 step "the display manager reports online"
   repeat
     do
+      # THE SAME TRUNCATION HAPPENS TO THE QUESTION AS TO THE ENABLE: 78 characters need longer than
+      # a three-second settle before the Return lands. The recording of run 45741233694 shows both
+      # lines cut in the same place - `lightdm:defa` and `lightdm:default` - which is a line still
+      # arriving, not a slow service manager.
       item "ask the service manager"
         input text "clear; svcs -H -o fmri,state svc:/application/graphical-login/lightdm:default"
-        settle 3
+        type_gap 0.12
+        settle 8
       item "press return on its own"
         input ret
-        settle 8
+        settle 10
       item "read the screen"
         read
           name dmstate
