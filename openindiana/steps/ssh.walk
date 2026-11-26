@@ -234,7 +234,7 @@ step "what session files and greeters this disk has"
 # can load, and the log above was truncated to its last fifteen lines. THIS STEP READS THE WHOLE THING
 # plus the driver directory and /etc/X11, so the next change is made from evidence.
 step "what drivers and framebuffers this disk has"
-  run "echo '--- fbs ---'; ls -l /dev/fbs/ 2>&1; echo '--- vgafb ---'; ls -l /dev/vgafb* 2>&1; echo '--- drivers ---'; ls /usr/lib/xorg/modules/drivers/amd64/ 2>&1; echo '--- xorg pkgs ---'; pkg list -H | grep -iE 'xorg-video|xorg-server' | head -14; echo '--- devices ---'; prtconf -d | grep -iE 'display' ; echo '--- last EE ---'; grep -E '\\(EE\\)|No devices' /var/log/Xorg.0.log 2>&1 | head -8"
+  run "echo '--- fbs ---'; ls /dev/fbs/ 2>&1 | tr '\\n' ' '; echo; echo '--- xorg drivers ---'; ls /usr/lib/xorg/modules/drivers/amd64/ | tr '\\n' ' '; echo; echo '--- kernel drivers ---'; ls /kernel/drv/amd64/ | grep -iE 'vga|fb|display' | tr '\\n' ' '; echo; echo '--- modinfo ---'; modinfo | grep -iE 'vgafb|illumosfb' ; echo '--- pkgs ---'; pkg list -H | grep -iE 'vgafb|illumosfb|xorg-video' | tr '\\n' ' '"
   via ssh
   timeout 180
 
@@ -260,10 +260,26 @@ step "what drivers and framebuffers this disk has"
 # THAT IS LIGHTDM'S OWN XORG TRIAL AT BOOT, with no config of ours, so it is the honest default answer.
 # THIS STEP THEREFORE CALLS `Xorg` DIRECTLY - no startx, no xinit - with each driver's config, and keeps
 # the server's own log for whichever one it tries.
-step "start Xorg directly, with a driver this disk has"
-  run "for d in vga vesa; do { echo 'Section Device'; echo 'Identifier Card0'; echo \"Driver $d\"; echo 'EndSection'; } > /tmp/xorg-$d.conf; Xorg :0 -config /tmp/xorg-$d.conf -logfile /tmp/Xorg-$d.log > /tmp/xorg-$d.out 2>&1 & sleep 12; if pgrep -f 'Xorg :0' > /dev/null; then echo \"driver $d: X IS UP\"; export DISPLAY=:0; nohup dbus-run-session mate-session > /tmp/mate-$d.log 2>&1 & sleep 15; echo \"mate: \$(pgrep -c -f mate-session)\"; break; else echo \"driver $d: died\"; grep -E '\\(EE\\)|No devices' /tmp/Xorg-$d.log | head -5; fi; done; echo '--- running ---'; pgrep -fl 'Xorg|mate-session|mate-panel' | head -5"
+# THE DISK HAS NO `vga` AND NO `vesa` DRIVER. THAT IS THE ANSWER TO `No devices detected`.
+#
+# MEASURED on run 45884290342, step 10/17 - the full driver directory this disk shipped:
+#
+#	ast_drv.so  ati_drv.so  cirrus_alpine.so  cirrus_drv.so  cirrus_laguna.so
+#	illumosfb_drv.so  intel_drv.so  mach64_drv.so  mga_drv.so  modesetting_drv.so  nv_drv.so ...
+#
+# THERE IS NO vga_drv.so AND NO vesa_drv.so. The two names 9ccce9d tried do not exist here, so those
+# attempts could never have succeeded even with a working `startx` - and the previous run's shell error
+# (`bash: -c: line 1: syntax error near unexpected token '('`) meant they never ran at all.
+#
+# THE TWO THAT COULD HOLD A QEMU SCREEN ARE `illumosfb` AND `modesetting`, and the framebuffer evidence
+# says which: /dev/fbs/ carries ONLY text-0 and text-1, and /dev/vgafb* does not exist - so the kernel's
+# vgafb driver is not attached, and illumosfb will have nothing to open unless it is. This step prints
+# the driver list, the framebuffers and the kernel's own module table BEFORE trying anything, then
+# starts the server itself - no `startx`, whose script needs a `readlink` this shell does not have.
+step "start Xorg directly, with a driver this disk actually ships"
+  run "{ for d in illumosfb modesetting; do echo 'Section Device' > /tmp/x.org; echo 'Identifier Card0' >> /tmp/x.org; echo \"Driver $d\" >> /tmp/x.org; echo 'EndSection' >> /tmp/x.org; Xorg :0 -config /tmp/x.org -logfile /tmp/Xorg-$d.log > /tmp/Xorg-$d.out 2>&1 & sleep 14; if pgrep -f 'Xorg :0' > /dev/null; then echo DRIVER_UP $d; break; else echo DRIVER_DIED $d; grep -E 'EE|No devices|Fatal' /tmp/Xorg-$d.log | head -4; fi; done; echo '--- server ---'; pgrep -fl 'Xorg :0' | head -3; echo '--- mate ---'; DISPLAY=:0 nohup dbus-run-session mate-session > /tmp/mate.log 2>&1 & sleep 20; pgrep -fl 'mate-session|mate-panel' | head -4; tail -6 /tmp/mate.log; }"
   via ssh
-  timeout 400
+  timeout 500
 
 
 step "the desktop is on screen"
