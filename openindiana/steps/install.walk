@@ -1012,14 +1012,32 @@ step "wait for the install to finish"
 #
 # SO THE ENABLE AND THE QUESTION ARE ONE LOOP: enable, ask, and enable again while the answer is not
 # `online`. `svcadm enable` on an already-online service is a no-op, so the retry cannot hurt.
+# `svcs ... || svcadm enable ...` WAS THE FIRST SHAPE OF THIS LOOP AND IT CANNOT WORK, because
+# `svcs` SUCCEEDS WHENEVER IT MATCHES THE FMRI - a service that exists and is `disabled` exits 0 and
+# prints `disabled`. So the enable on the right of `||` ran ONLY when the service did not exist yet,
+# which is the one case where `svcadm` could do nothing anyway. The `disabled` this run kept reading
+# would have survived the loop unchanged.
+#
+# ENABLE FIRST, THEN ASK, EVERY ATTEMPT: `svcadm enable` on an online service is a no-op, so the
+# retry is harmless, and there is now no ordering in which the enable is skipped.
+#
+# BOTH LINES ARE SHORT ENOUGH TO TYPE AT 0.12s, and each has its own Return - measured in this very
+# run: the 54-character enable and the 77-character query both arrived whole.
 step "enable the display manager, retried until it is online"
   repeat
     do
-      item "ask for the service's state, or enable it"
-        input text "clear; svcs -H -o state svc:/application/graphical-login/lightdm || svcadm enable svc:/application/graphical-login/lightdm"
+      item "enable it, every attempt"
+        input text "svcadm enable svc:/application/graphical-login/lightdm"
         type_gap 0.12
         settle 8
-      item "press return on its own"
+      item "press return on the enable"
+        input ret
+        settle 8
+      item "ask for the service's state"
+        input text "clear; svcs -H -o state svc:/application/graphical-login/lightdm:default"
+        type_gap 0.12
+        settle 8
+      item "press return on the question"
         input ret
         settle 12
       item "read the screen"
