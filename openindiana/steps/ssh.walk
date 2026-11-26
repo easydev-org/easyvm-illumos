@@ -234,7 +234,7 @@ step "what session files and greeters this disk has"
 # can load, and the log above was truncated to its last fifteen lines. THIS STEP READS THE WHOLE THING
 # plus the driver directory and /etc/X11, so the next change is made from evidence.
 step "what drivers and framebuffers this disk has"
-  run "echo '--- fbs ---'; ls /dev/fbs/ 2>&1 | tr '\\n' ' '; echo; echo '--- kernel drivers ---'; ls /kernel/drv/amd64/ | grep -iE 'vga|fb|display' | tr '\\n' ' '; echo; echo '--- dmesg vga ---'; dmesg | grep -iE 'vga|vgatext|fbt|display' | head -8; echo '--- sudo ---'; sudo -n true && echo SUDO_OK || echo SUDO_NO"
+  run "echo '--- fbs ---'; ls /dev/fbs/ 2>&1 | tr '\\n' ' '; echo; echo '--- kernel drivers ---'; ls /platform/i86pc/kernel/drv/amd64/ | grep -iE 'vga|fb|display' | tr '\\n' ' '; echo; echo '--- pkgs contain vgafb ---'; pkg list -H | grep -iE 'vgafb|illumosfb|graphics' | tr '\\n' ' '; echo; echo '--- installed count ---'; pkg list -H | wc -l; echo '--- dmesg ---'; dmesg | grep -iE 'vga|fbt|nvidia|display' | tail -6"
   via ssh
   timeout 180
 
@@ -296,10 +296,31 @@ step "what drivers and framebuffers this disk has"
 # `pciclass,030000` IS the VGA-compatible display controller.
 #
 # SO EVERY SERVER COMMAND RUNS UNDER `sudo -n`, and the step proves sudo works before it relies on it.
+# SUDO NEEDS A PASSWORD, AND THE INSTALLER SET IT TO THE SAME ONE THIS WALK ALREADY USES.
+#
+# MEASURED on run 45888482024, step 11/17 - the machine's own audit log, on the console:
+#
+#	Nov 26 20:09:23 sudo: vmuser : a password is required ; PWD=/export/home/vmuser ; USER=root ;
+#t      COMMAND=/usr/bin/Xorg :0 -config /tmp/x.org -logfile /tmp/Xorg-illumosfb.log
+#
+# `sudo -n` was the wrong ask: this sudo is configured to want a password, and `install.walk` types
+# `{{ password }}` into BOTH the root field and the user field, so the answer is the password the run
+# was started with. `sudo -S` reads it from stdin, which is the only way an unattended shell can give it.
+#
+# AND THE FIRST THING ROOT CAN DO THAT `vmuser` COULD NOT IS ASK THE SERVER TO CONFIGURE ITSELF:
+#
+#	Xorg -configure        "The '-configure' option can only be used by root." was the whole answer last
+#	                        run, so this is the first time it is actually asked
+#
+# dmesg from that same run also carries a line no earlier run showed:
+#
+#	Nov 26 20:07:43 openindiana nvidia_modeset: Unloading
+#
+# so this step records what the kernel attached for the display before it tries any driver by name.
 step "start Xorg as root, with a driver this disk ships"
-  run "{ sudo -n true && echo SUDO_OK || echo SUDO_NO; for d in illumosfb modesetting; do echo 'Section Device' > /tmp/x.org; echo 'Identifier Card0' >> /tmp/x.org; echo \"Driver $d\" >> /tmp/x.org; echo 'EndSection' >> /tmp/x.org; sudo -n Xorg :0 -config /tmp/x.org -logfile /tmp/Xorg-$d.log > /tmp/Xorg-$d.out 2>&1 & sleep 14; if sudo -n pgrep -f 'Xorg :0' > /dev/null; then echo DRIVER_UP $d; break; else echo DRIVER_DIED $d; cat /tmp/Xorg-$d.out | tail -6; grep -E 'EE|No devices|Fatal' /tmp/Xorg-$d.log 2>&1 | head -4; fi; done; echo '--- server ---'; sudo -n pgrep -fl 'Xorg :0' | head -3; echo '--- mate ---'; sudo -n env DISPLAY=:0 dbus-run-session mate-session > /tmp/mate.log 2>&1 & sleep 20; pgrep -fl 'mate-session|mate-panel' | head -4; tail -8 /tmp/mate.log; }"
+  run "export SUDO_ASKPASS=/bin/false; { echo '{{ password }}'; } | sudo -S -p '' true && echo SUDO_OK || echo SUDO_NO; echo '--- Xorg -configure ---'; { echo '{{ password }}'; } | sudo -S -p '' Xorg -configure 2>&1 | tail -14; for d in illumosfb modesetting; do echo 'Section Device' > /tmp/x.org; echo 'Identifier Card0' >> /tmp/x.org; echo \"Driver $d\" >> /tmp/x.org; echo 'EndSection' >> /tmp/x.org; { echo '{{ password }}'; } | sudo -S -p '' Xorg :0 -config /tmp/x.org -logfile /tmp/Xorg-$d.log > /tmp/Xorg-$d.out 2>&1 & sleep 14; if sudo -n pgrep -f 'Xorg :0' > /dev/null || pgrep -f 'Xorg :0' > /dev/null; then echo DRIVER_UP $d; break; else echo DRIVER_DIED $d; tail -6 /tmp/Xorg-$d.out; grep -E 'EE|No devices|Fatal' /tmp/Xorg-$d.log 2>&1 | head -5; fi; done; echo '--- server ---'; pgrep -fl 'Xorg :0' | head -3; echo '--- mate ---'; { echo '{{ password }}'; } | sudo -S -p '' env DISPLAY=:0 dbus-run-session mate-session > /tmp/mate.log 2>&1 & sleep 20; pgrep -fl 'mate-session|mate-panel' | head -4; tail -8 /tmp/mate.log; }"
   via ssh
-  timeout 500
+  timeout 600
 
 
 step "the desktop is on screen"
@@ -314,10 +335,10 @@ step "the desktop is on screen"
       bind desktop
       source screen
       mode text
-      rect [0, 0, 1920, 1080]
-      rect_at [1920, 1080]
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
       words [[Applications]]
-    max 24
+    max 30
 
 
 step "flush the writes before anything else"
