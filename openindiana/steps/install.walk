@@ -91,10 +91,23 @@ step "the loader has handed over to the kernel"
 #	1, Chinese - Simplified   2, Chinese - Traditional   3, English   4, French   ...
 #
 # and the prompt itself says "default is 3", so a single Return takes English.
+# THE ILLUMOS LOADER'S OWN MENU CAN HOLD THE BOOT, SO A RETURN IS SENT WITH EVERY LOOK.
+#
+# MEASURED on run 45835910098: the disk was freshly created (`disk.qcow2: 0 MiB`), the ISO was at
+# `bootindex=0`, and the screen nevertheless sat on
+#
+#	Welcome to illumos   1. Boot Multi User [Enter]   2. Boot Single User   ...
+#
+# for the whole sixty-attempt budget. That menu belongs to the loader inside the ISO, and its autoboot
+# does not always fire - the same medium on other runs went straight to `Preparing live image for
+# use`. A Return takes its preselected first row (`Boot Multi User`), which is what boots the live
+# system, and at the language prompt a Return is harmless because that prompt reads a NUMBER and an
+# empty line is its documented default.
 step "the live system asks for a language"
   repeat
     do
-      item
+      item "take the loader menu's first row if it is up"
+        input ret
         settle 10
       item "read the screen"
         read
