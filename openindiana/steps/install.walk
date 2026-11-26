@@ -552,28 +552,44 @@ step "install"
 # seconds before the wizard closes itself, and a 25-second poll can miss it. The DISK's loader menu
 # is the durable witness - it is on screen for the ten-second autoboot countdown and it is proof the
 # install wrote a bootable system. `Boot Multi User` is that menu's own first row.
+# A BLACK SCREEN IS THE FIRST THING THE SCREENSAVER DOES, AND NOTHING READ IT AS ONE.
+#
+# MEASURED on run 45825688651: round 1 read the live desktop; round 30 - about five minutes later -
+# read `see: 0 word(s):`, and every round after that read the same empty string for the rest of the
+# ninety-attempt budget. The MATE screensaver BLANKS the panel completely before it ever draws the
+# lock dialog, so the `Enter your password` test this loop used to carry was looking for text that
+# does not exist yet.
+#
+# SO THE LOOP WAKES THE PANEL FIRST, WITH A POINTER MOVE-AND-CLICK ON THE DESKTOP'S EMPTY MIDDLE at
+# (512, 400). That is not a button: the desktop's icons are down the left edge and the wizard - when
+# it is up - is a window whose centre is the progress page. A click there cannot press `Quit`, and it
+# is what a person does to wake a screensaver.
+#
+# THE FOUR WITNESSES FOLLOW, IN THE ORDER THEY APPEAR:
+#
+#	installation is complete   the wizard's own last page, visible a few seconds
+#	Boot Multi User            the DISK's loader menu, about ten seconds of autoboot
+#	Chainload disk0            the same menu, its last row
+#	Chinese                    the language page, which only returns after a reboot
+#
+# The first two are the wizard closing; the last two are the live image restarting, which only
+# happens after the wizard closes. All four mean the install is over.
 step "the install finishes and the disk's own loader comes up"
   repeat
     do
+      item "wake the panel, which blanks before it locks"
+        input click [512, 400]
+        settle 3
       item "read the screen"
         read
           name done
-      item "is it finished - the wizard's page, or the disk's loader menu"
+      item "is it finished"
         check
           source done
           mode text
           name finished
           rect [0, 0, 1024, 768]
           rect_at [1024, 768]
-          # THE THREE WITNESSES, IN THE ORDER THEY APPEAR:
-          #
-          #   `installation is complete`  the wizard's own last page, visible for a few seconds
-          #   `Boot Multi User`           the DISK's loader menu, about ten seconds of autoboot
-          #   `Chinese`                   the LANGUAGE page - which can only be on screen a second
-          #                               time if the machine rebooted, and it only reboots after
-          #                               the wizard closes
-          #
-          # ALL THREE MEAN THE SAME THING AND NONE OF THEM CAN BE PRODUCED BY AN UNFINISHED INSTALL.
           words [[installation, is, complete], [Boot, Multi, User], [Chainload, disk0], [Chinese]]
       item "leave it alone while it copies"
         settle 8
