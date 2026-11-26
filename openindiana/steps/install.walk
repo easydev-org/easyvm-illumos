@@ -1026,8 +1026,30 @@ step "wait for the install to finish"
 step "enable the display manager, retried until it is online"
   repeat
     do
-      item "enable it, every attempt"
-        input text "svcadm enable svc:/application/graphical-login/lightdm"
+      # `-r` IS THE FIX, AND IT WAS REMOVED ON A READING OF THE MAN PAGE THAT HAD IT BACKWARDS.
+      #
+      # MEASURED on run 45753704107, after the enable-then-ask loop was already in place: every one of
+      # the forty attempts read `offline`, never `disabled` and never `online`. `disabled` means "not
+      # enabled"; `offline` means "ENABLED, AND THE START FAILED" - so the command was running and
+      # lightdm could not come up.
+      #
+      # illumos svcadm(1M): `-r   When enabling a service, also enable the services that it DEPENDS
+      # ON.` It is not "restart the dependants" - a previous commit removed `-r` on exactly that
+      # misreading, with the note "a freshly-installed service has none of". lightdm depends on dbus
+      # and consolekit; with `-r` absent they are never brought up, and lightdm sits at `offline`
+      # forever. The distribution's own handbook gives the command WITH `-r`.
+      #
+      # `svcadm clear` FIRST, because an attempt that failed hard leaves the instance in maintenance
+      # and `enable` is then a no-op.
+      item "clear any failed state"
+        input text "svcadm clear svc:/application/graphical-login/lightdm"
+        type_gap 0.12
+        settle 4
+      item "press return on the clear"
+        input ret
+        settle 4
+      item "enable it and everything it depends on"
+        input text "svcadm enable -r svc:/application/graphical-login/lightdm"
         type_gap 0.12
         settle 8
       item "press return on the enable"
@@ -1051,7 +1073,7 @@ step "enable the display manager, retried until it is online"
       rect_at [1024, 768]
       words [[online]]
       without [disabled]
-    max 40
+    max 60
 
 
 # THE STATE IS ASKED AT THE CONSOLE, NOT OVER SSH, FOR THE REASON THE STEP ABOVE DOCUMENTS:
