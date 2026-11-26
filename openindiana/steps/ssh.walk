@@ -218,12 +218,6 @@ step "what session files and greeters this disk has"
 #
 # `startx` IS THE COMMAND THAT STARTS BOTH: it launches the X server and then the client, and wrapped in
 # `ck-launch-session` the session has the seat and runtime directory MATE looks for.
-step "start X and MATE in a ConsoleKit session"
-  run "nohup ck-launch-session dbus-run-session startx > /tmp/startx.log 2>&1 & sleep 20; pgrep -fl 'Xorg|Xsun|X :|mate-session|mate-panel' | head -6; echo '--- log ---'; tail -15 /tmp/startx.log"
-  via ssh
-  timeout 300
-
-
 # XORG STARTED AND DIED: "no screens found". THE NEXT STEP ASKS WHY, BEFORE THE GATE SPENDS TEN MINUTES.
 #
 # MEASURED on run 45876790670, step 10/16 - `startx` did start the server:
@@ -239,10 +233,21 @@ step "start X and MATE in a ConsoleKit session"
 # DESKTOP ON THE SAME DEVICE in run 45859729662, so the difference is which driver the installed system
 # can load, and the log above was truncated to its last fifteen lines. THIS STEP READS THE WHOLE THING
 # plus the driver directory and /etc/X11, so the next change is made from evidence.
-step "why Xorg found no screens"
-  run "echo '--- Xorg.0.log ---'; sed -n '1,90p' /var/log/Xorg.0.log 2>&1; echo '--- drivers ---'; ls /usr/lib/xorg/modules/drivers/ 2>&1; echo '--- /etc/X11 ---'; ls -R /etc/X11 2>&1 | head -40; echo '--- packages ---'; pkg list -H 2>/dev/null | grep -iE 'xorg|video|vesa' | head -20; echo '--- devinfo gfx ---'; prtconf -d 2>/dev/null | grep -iE 'display|vga|video' | head -8"
+step "what drivers and framebuffers this disk has"
+  run "test -f /var/log/Xorg.0.log && grep -nE 'NEVER|DRIVER|Driver|vgafb|VGA|Screen|Fatal|\\(EE\\)' /var/log/Xorg.0.log | head -24; echo '--- drivers ---'; ls /usr/lib/xorg/modules/drivers/; echo '--- xorg pkgs ---'; pkg list -H | grep -iE 'xorg-video|xorg-server' | head -14; echo '--- kernel ---'; modinfo | grep -iE 'vgafb|vga' | head -3; ls -l /dev/fb* 2>&1"
   via ssh
   timeout 180
+
+
+# THE DRIVER, NOT THE DISPLAY MANAGER. `no screens found` means Xorg found the device and no driver
+# willing to claim it, so this step tries the drivers an illumos disk ships until one holds the screen.
+#
+# THE CONFIG IS WRITTEN WITHOUT QUOTES BECAUSE XORG ACCEPTS BARE TOKENS - `Driver vga` parses the same
+# as `Driver "vga"` - which keeps this command readable inside the walk's own quoting.
+step "start X with a driver this disk has"
+  run "echo 'exec dbus-run-session mate-session' > /tmp/xinitrc; chmod +x /tmp/xinitrc; for d in vga vesa modesetting; do { echo 'Section Device'; echo 'Identifier Card0'; echo \"Driver $d\"; echo 'EndSection'; } > /tmp/xorg-$d.conf; nohup ck-launch-session startx /tmp/xinitrc -- -config /tmp/xorg-$d.conf > /tmp/startx-$d.log 2>&1 & sleep 22; if pgrep -f Xorg > /dev/null; then echo \"driver $d: X IS UP\"; break; else echo \"driver $d: died\"; grep -E 'EE|Fatal|no screens|not found' /tmp/startx-$d.log | head -4; fi; done; echo '--- running ---'; pgrep -fl 'Xorg|mate-session|mate-panel' | head -5"
+  via ssh
+  timeout 400
 
 
 step "the desktop is on screen"
@@ -260,7 +265,7 @@ step "the desktop is on screen"
       rect [0, 0, 1920, 1080]
       rect_at [1920, 1080]
       words [[Applications]]
-    max 60
+    max 24
 
 
 step "flush the writes before anything else"
