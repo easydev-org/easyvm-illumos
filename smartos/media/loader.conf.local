@@ -1,0 +1,4 @@
+answers_json_load=YES
+answers_json_type=file
+answers_json_name=/local/answers.json
+answers_json_flags="name=answers.json"

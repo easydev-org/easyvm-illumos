@@ -1,0 +1,165 @@
+# SMARTOS 20261121T172607Z - UNATTENDED, VIA A BOOT MODULE, TO A SELF-BOOTING POOL.
+#
+# SMARTOS IS NOT AN INSTALLER-TO-A-DISK DISTRIBUTION IN THE WAY THE OTHER THREE ARE, AND THE ROUTE
+# THIS FILE TAKES IS THE ONE THE PROJECT DOCUMENTS RATHER THAN THE ONE THE WIZARD OFFERS.
+#
+# MEASURED, 2026-11-26, on the pod, in this order - each step closed a door the previous left open:
+#
+#	1  the ISO boots to `SmartOS Setup`, an interactive wizard, and it is driven by a `read` that
+#	   does NOT respond to Return at the `(default gateway IP [none])` page. `ret`, `kp_enter`,
+#	   `tab`, `spc` and releasing every modifier were all tried; letters type fine, control keys
+#	   do not. So the interactive path cannot be automated from a console driver.
+#
+#	2  the wizard's answer file is looked up at three paths, read out of the boot_archive:
+#
+#		${USBMNT}/private/answers.json      (/usbkey, from mount_zfs ${SYS_ZPOOL}/usbkey)
+#		${USBMOUNTPOINT}/private/answers.json   (/mnt/usbkey, from mount_usb_key)
+#		/system/boot/answers.json
+#
+#	   A `private/answers.json` added to a REMASTERED ISO is therefore never seen - measured: the
+#	   wizard came up unchanged. And a FAT image with `.joyliveusb` + `private/answers.json` is not
+#	   seen either, because `usb_key_version` requires a GRUB MBR:
+#
+#		mbr_sig_offset=0x1fe  mbr_sig=aa55
+#		mbr_grub_offset=0x3e  mbr_grub_version=0203
+#		mbr_stage1_offset=0xfa
+#
+#	   and `boot/pmbr` from the ISO has 00 00 at 0x3e, so it is not that key.
+#
+#	3  THE DOCUMENTED WAY IS A BOOT MODULE, and it works. `/boot/loader.conf.local` with
+#
+#		answers_json_load=YES
+#		answers_json_type=file
+#		answers_json_name=/local/answers.json
+#		answers_json_flags="name=answers.json"
+#
+#	   and the answers at `/local/answers.json` make the loader load it, which the boot log proves:
+#
+#		Loading unix...
+#		Loading /platform/i86pc/amd64/boot_archive...
+#		Loading /platform/i86pc/amd64/boot_archive.hash...
+#		Loading /local/answers.json...          <- the module
+#		Booting...
+#
+#	4  THE TWO KEYS THAT MAKE THE RESULT SELF-BOOTING ARE `bootpool` AND `pisource`, and getting
+#	   them wrong is why an earlier attempt installed successfully and still could not boot.
+#	   Read out of the boot_archive:
+#
+#		promptopt "Specify a (configured) zpool from which to boot" ${BOOTPOOL-"none"} "bootpool"
+#		if [[ "$val" != "none" ]]; then
+#		    boot_from_zpool="yes"
+#		    promptopt "Source for SmartOS to install" ${PI_SOURCE-"media"} "pisource"
+#		...
+#		if [ $boot_from_zpool == "yes" ]; then
+#		    piadm bootable -e -i $PI_SOURCE $BOOTPOOL
+#
+#	   `"bootpool": "none"` (the documented example) creates the zones pool and STOPS. `"bootpool":
+#	   "zones"` with `"pisource": "media"` runs `piadm bootable -e -i media zones`, which is what
+#	   writes the boot loader. MEASURED, before and after, from the disk's own GPT:
+#
+#		with bootpool none      part 0 ZFS 20.5G                      (no ESP, no MBR signature)
+#		with bootpool zones     part 0 EFI 256M, part 1 ZFS 20.2G,
+#		                        MBR sig at 0x1fe = 55aa
+#
+#	   and `piadm list zones` then reports:
+#
+#		PI STAMP              BOOTABLE FILESYSTEM   BOOT IMAGE NOW  NEXT
+#		20261121T172607Z      zones/boot            next            yes   yes
+#
+#	5  THE DISK THEN BOOTS ALONE. Measured with no medium attached: the machine prints its own
+#	   `1. Boot SmartOS [Enter]` menu - the loader piadm wrote - and reaches
+#	      `smartos uscons login:`
+#
+# SO THIS FILE'S WHOLE JOB IS: boot the media with two extra files on it, wait for the login prompt
+# that the installed pool produces, and publish. There is NO keystroke anywhere - the answers file
+# is what drives setup, and `config_console: true` is what starts it without a prompt.
+#
+# THE TWO FILES ARE BUILT INTO THE ISO BY `artifacts-publish.yml`, NOT BY THIS WALK, because a stage
+# may not prepare its own media: the workflow remasters the pinned ISO with xorriso and pushes the
+# result as `iso-smartos-20261121T172607Z`. See smartos/media/ for the two files it adds.
+walkthrough "smartos 20261121T172607Z - unattended to a self-booting pool"
+resolution 1024x768
+recording_resolution 1024x768
+password admin
+
+var disk_gb
+  default "20"
+  from args.disk_gb
+var out
+  default out/smartos-install.qcow2
+  from args.out
+
+
+# THE MEDIUM IS THE REMASTERED ISO - the pinned one plus /boot/loader.conf.local and
+# /local/answers.json. `needs:` names it so a leg that forgot the asset fails here rather than forty
+# minutes in.
+step "the remastered media is on disk"
+  needs [smartos-20261121T172607Z.iso]
+
+
+step "create the empty disk"
+  disk
+    file disk.qcow2
+    size "{{ disk_gb }}"
+
+
+# THE MACHINE IS THE SAME SHAPE THE OTHER THREE USE: q35, OVMF, 1024x768, a virtio disk. 6 GiB for the
+# same reason openindiana needs it - the live image unpacks into RAM before it runs.
+#
+# THE ISO IS AT bootindex=0 AND THE DISK AT 1, so the install runs from the medium; the disk is
+# `id=target` and `piadm` finds it as `c1t0d0`. The NIC's MAC is the one answers.json names in
+# `admin_mac`, and `disklist` must see the same device the setup script writes the pool to.
+step "boot the media"
+  boot
+    machine "q35,accel=kvm,vmport=off"
+    args [["-cpu", "Skylake-Client-v4"], ["-smp", "4"], ["-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd"], ["-drive", "if=pflash,format=raw,file=OVMF_VARS.fd"], ["-m", "6144"], ["-chardev", "socket,id=qga0,path=qga.sock,server=on,wait=off"], ["-device", "isa-serial,chardev=qga0"], ["-device", "VGA,xres=1024,yres=768"], ["-device", "qemu-xhci,id=xhci"], ["-device", "usb-tablet,bus=xhci.0"], ["-device", "usb-kbd,bus=xhci.0"], ["-drive", "file=smartos-20261121T172607Z.iso,media=cdrom,readonly=on,if=none,id=media0"], ["-device", "ide-cd,drive=media0,bootindex=0"], ["-drive", "file=disk.qcow2,if=none,format=qcow2,id=target"], ["-device", "virtio-blk-pci,drive=target,bootindex=1"], ["-netdev", "tap,id=net0,ifname=qemutap0,script=no,downscript=no"], ["-device", "virtio-net-pci,netdev=net0,mac=52:54:00:56:4d:04,romfile=,host_mtu=1450"]]
+    timeout 3600
+
+
+# THE LOADER'S OUTPUT IS ON THE SERIAL LINE, AND THE ANSWER MODULE IS IN IT. This waits for the
+# module line rather than the machine, because that line is the proof the answers were read: an ISO
+# without `/boot/loader.conf.local` boots identically and never prints it.
+step "the loader loads the answer module"
+  until "Loading /local/answers.json"
+  from console
+  timeout 420
+
+
+# SETUP WRITES THE POOL, THE PLATFORM IMAGE AND THE BOOT LOADER, THEN REBOOTS INTO WHAT IT WROTE.
+#
+# MEASURED: the pool and `piadm bootable` take about eight minutes, the disk grows to roughly 690 MiB
+# (the platform image is ~190 MiB compressed plus the pool's metadata), and the machine then restarts
+# itself - `piadm` is what makes the pool bootable, and setup reboots at the end.
+#
+# THE REBOOT MEANS THE PASSWORD PROMPT IS THE WITNESS, NOT ANY SCREEN SETUP DRAWS: by then setup is
+# gone. `uscons login` is the console login service's own line on this distribution.
+step "the installed pool comes up to its login prompt"
+  repeat
+    do
+      item
+        settle 20
+      item "read the screen"
+        read
+          name login
+    until
+      bind up
+      source login
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[uscons, login]]
+    max 120
+
+
+step "the installed system is up"
+  screenshot
+
+
+step "stop the machine"
+  stop kill
+  timeout 180
+
+
+step "publish the disk"
+  save "{{ out }}"

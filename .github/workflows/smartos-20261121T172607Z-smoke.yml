@@ -1,0 +1,51 @@
+name: smartos-20261121T172607Z-smoke
+
+# DOES THE PUBLISHED SMARTOS DISK START? Boot it, wait for its login prompt, kill it.
+#
+# THIS IS THE CLAIM THE INSTALL LEG CANNOT MAKE, AND ON THIS DISTRIBUTION IT IS THE ONE THAT MATTERS
+# MOST: MEASURED, a setup run with `"bootpool": "none"` installs perfectly and publishes a disk with
+# no ESP and no MBR signature (`0x1fe = 00 00`), which no firmware will start. The install leg only
+# produces a bootable disk when the answers say `"bootpool": "zones"` - so this stage is what proves
+# the difference, and it is the only thing that does.
+#
+# IT PUBLISHES NO DISK. `out:` is empty, so the only artifact is the recording.
+on:
+  workflow_dispatch:
+    inputs:
+      from_tag:
+        description: >-
+          the PUBLISHED disk to boot. Empty uses the tag this repository's install leg publishes.
+        default: "smartos-install"
+      disks_repository:
+        description: "the ghcr repository that holds the disk"
+        default: "easydev-org/easyvm-solaris"
+
+concurrency:
+  group: smartos-20261121T172607Z-smoke
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  checks: write
+
+jobs:
+  smoke:
+    uses: easydev-org/easyvm/.github/workflows/stage.yml@v0.0.4
+    secrets: inherit
+    with:
+      image_repository: easydev-org/easyvm
+      image_tag: v0.0.4
+      disk_gb: "20"
+      group: smartos-20261121T172607Z-smoke
+      disks_repository: ${{ inputs.disks_repository }}
+      stages: |
+        [
+          {
+            "name": "smartos-smoke",
+            "file": "smartos/steps/smoke.walk",
+            "pull": "${{ inputs.from_tag }}",
+            "out": "",
+            "timeout": 20
+          }
+        ]

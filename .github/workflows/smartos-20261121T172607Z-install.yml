@@ -1,0 +1,48 @@
+name: smartos-20261121T172607Z-install
+
+# INSTALL SMARTOS UNATTENDED AND PUBLISH A SELF-BOOTING DISK.
+#
+# THE MEDIUM IS MIRRORED, AND IT IS REMASTERED ON THE WAY IN. `artifacts-publish.yml` adds
+# /local/answers.json and /boot/loader.conf.local to the pinned ISO and pushes the result; a stage
+# asks the package and nothing upstream.
+#
+# 20 GB IS THE POOL AND THE PLATFORM IMAGE: MEASURED, the installed disk holds about 690 MiB after
+# `piadm bootable` copies the platform image into `zones/boot`.
+on:
+  workflow_dispatch:
+    inputs:
+      disks_repository:
+        description: "the ghcr repository that holds the disks and media"
+        default: "easydev-org/easyvm-solaris"
+
+concurrency:
+  group: smartos-20261121T172607Z-install
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  checks: write
+
+jobs:
+  install:
+    uses: easydev-org/easyvm/.github/workflows/stage.yml@v0.0.4
+    secrets: inherit
+    with:
+      image_repository: easydev-org/easyvm
+      image_tag: v0.0.4
+      disk_gb: "20"
+      group: smartos-20261121T172607Z-install
+      disks_repository: ${{ inputs.disks_repository }}
+      stages: |
+        [
+          {
+            "name": "smartos-install",
+            "file": "smartos/steps/install.walk",
+            "pull": "",
+            "assets": ["iso-smartos-20261121T172607Z:smartos-20261121T172607Z.iso.tar"],
+            "out": "smartos-install.qcow2",
+            "publish": "smartos-install",
+            "timeout": 120
+          }
+        ]

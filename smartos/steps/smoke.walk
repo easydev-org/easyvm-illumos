@@ -1,0 +1,83 @@
+# DOES THE PUBLISHED SMARTOS DISK START? Boot it, look, and kill it - nothing else.
+#
+# "THE INSTALL LEG PASSED" IS NOT THE SAME CLAIM, AND ON THIS DISTRIBUTION IT IS A LARGER GAP THAN
+# USUAL. MEASURED on 2026-11-26: a setup run with `"bootpool": "none"` (the value the project's own
+# example file uses) creates a working `zones` pool, installs the platform image, and publishes a disk
+# that CANNOT BOOT - its GPT holds one ZFS partition, with no ESP and no MBR signature:
+#
+#	part 0  ZFS  20.5 GB
+#	0x1fe   00 00        (a bootable MBR reads 55 aa here)
+#
+# Only `"bootpool": "zones"` + `"pisource": "media"` runs `piadm bootable -e -i media zones`, which
+# writes the loader and an EFI partition:
+#
+#	part 0  EFI   256 MB
+#	part 1  ZFS  20.2 GB
+#	0x1fe   55 aa
+#
+# so this file is what tells those two disks apart, and it is the only thing that does.
+#
+# THE DISK IS STARTED BY THE LOADER `piadm` WROTE, NOT BY A FIRMWARE ENTRY: MEASURED with no medium
+# attached, the machine prints its own
+#
+#	1. Boot SmartOS [Enter]
+#	2. Escape to loader prompt
+#	3. Reboot
+#	Options:
+#	4. Configure Boot Options...
+#
+# and then `Loading unix...` / `Booting...` / `SmartOS Version joyent_20261121T172607Z 64-bit`,
+# reaching `smartos uscons login:` about four minutes after `boot`.
+#
+# IT PUBLISHES NO DISK. `out:` is empty, so stage.yml reports "no disk to publish" and the only
+# artifact is the recording. The disk it verifies is the one the install leg already published.
+walkthrough "the published disk starts - nothing else"
+resolution 1024x768
+recording_resolution 1024x768
+
+step "boot the published disk"
+  boot
+    machine "q35,accel=kvm,vmport=off"
+    args [["-cpu", "Skylake-Client-v4"], ["-smp", "4"], ["-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd"], ["-drive", "if=pflash,format=raw,file=OVMF_VARS.fd"], ["-m", "6144"], ["-chardev", "socket,id=qga0,path=qga.sock,server=on,wait=off"], ["-device", "isa-serial,chardev=qga0"], ["-device", "VGA,xres=1024,yres=768"], ["-device", "qemu-xhci,id=xhci"], ["-device", "usb-tablet,bus=xhci.0"], ["-device", "usb-kbd,bus=xhci.0"], ["-drive", "file=disk.qcow2,if=none,format=qcow2,discard=unmap,id=target"], ["-device", "virtio-blk-pci,drive=target,bootindex=0"], ["-netdev", "tap,id=net0,ifname=qemutap0,script=no,downscript=no"], ["-device", "virtio-net-pci,netdev=net0,mac=52:54:00:56:4d:04,romfile=,host_mtu=1450"]]
+    timeout 900
+
+
+# THE LOGIN PROMPT IS THE WITNESS, AND THE LOADER MENU IS TOO FAST TO BE ONE.
+#
+# MEASURED: the disk's loader menu autoboots after about ten seconds, and this walk polls every ten -
+# so a run can be on either side of it and miss the menu entirely while the machine is perfectly
+# healthy. A gate that can miss a good disk is a gate that fails at random.
+#
+# THE PROMPT IS THE DURABLE FACT: `smartos uscons login:` means the kernel mounted the zones pool and
+# started the console login service, which is the whole claim this stage exists to make. It stays on
+# screen until something logs in, so a slow poll cannot step over it.
+#
+# A DISK THAT piadm NEVER MADE BOOTABLE NEVER GETS HERE AT ALL - MEASURED, such a disk has no ESP and
+# no MBR signature (`0x1fe = 00 00`), so the firmware answers `BdsDxe: No bootable option or device
+# was found` or sits black, and this loop runs out its budget on a frame with no words in it.
+step "the installed system reaches its login"
+  repeat
+    do
+      item
+        settle 15
+      item "read the screen"
+        read
+          name login
+    until
+      bind up
+      source login
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[uscons, login]]
+    max 90
+
+
+step "record a minute of the boot"
+  settle 60
+
+
+step "stop the machine"
+  stop kill
+  timeout 120

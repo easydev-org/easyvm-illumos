@@ -66,6 +66,12 @@ jobs:
           - { tag: "iso-openindiana-2026.10-gui", group: "others", url: "https://dlc.openindiana.org/isos/hipster/20261030/OI-hipster-gui-20261030.iso", sha: "fed68fdc2334fdaf1b63006b491de364ea008de11b1f048e506ec0d20c6b3c53", size: "2654926848" }
           - { tag: "iso-omnios-r151060", group: "others", url: "https://downloads.omnios.org/media/stable/omnios-r151060.iso", sha: "ddb82557a580fbd295d5d2f59742517458c2cb73f36b5bff74b3d1c65158a311", size: "329123840" }
           - { tag: "iso-tribblix-0m41.1", group: "others", url: "https://iso.tribblix.org/iso/tribblix-0m41.1.iso", sha: "ff5044c0c588424ddabaaeb2ab533dc4a5b99e41732649ba7a05147acf7b91b6", size: "1396197376" }
+          # SMARTOS IS THE FOURTH illumos DISTRIBUTION AND THE ONLY ONE WHOSE MEDIUM NEEDS EDITING.
+          # It is a live hypervisor image with no installer binary: the setup script reads its answers
+          # from a boot module, so `artifacts-publish` adds those two files to the ISO before packing
+          # it (see the `add the smartos answer module to the ISO` step). MEASURED 2026-11-26: the
+          # resulting disk installs unattended and boots on its own to `smartos uscons login:`.
+          - { tag: "iso-smartos-20261121T172607Z", group: "others", url: "https://us-central.manta.mnx.io/Joyent_Dev/public/SmartOS/20261121T172607Z/smartos-20261121T172607Z.iso", sha: "001cb5c1cc0c038fa7fda4b9766c106590e254be96f9d5ae3fc4650e458ebe77", size: "642430976" }
     # NO `if:` HERE, AND THAT IS NOT AN OVERSIGHT: A JOB-LEVEL `if:` CANNOT SEE `matrix`.
     #
     # GitHub evaluates a job's `if:` before the matrix is expanded, so `matrix.artifact.tag` is empty
@@ -188,6 +194,53 @@ jobs:
           echo "path=$out" >> "$GITHUB_OUTPUT"
         id: unpack
 
+      # SMARTOS NEEDS TWO FILES ADDED TO ITS ISO, AND THIS IS THE ONLY PLACE THEY CAN GO.
+      #
+      # A stage may not prepare its own media - that is the whole reason `fetch:` was deleted from the
+      # engine - so the two files are built in HERE, where the pinned ISO is already on disk and its
+      # digest has been checked.
+      #
+      # THE TWO FILES ARE THE ANSWER FILE AND ONE LINE OF LOADER CONFIG, and each was measured:
+      #
+      #	/local/answers.json        the setup answers, with `"bootpool": "zones"` and
+      #	                           `"pisource": "media"` - THE TWO KEYS THAT MAKE THE POOL BOOTABLE.
+      #	                           With `"bootpool": "none"` (the project's own example) setup
+      #	                           creates a working pool and publishes a disk with no ESP and no
+      #	                           MBR signature, which cannot boot. MEASURED both ways.
+      #	/boot/loader.conf.local    the four `answers_json_*` lines that make the loader load that
+      #	                           file as a module. The boot log then reads
+      #	                           `Loading /local/answers.json...`, which the install walk waits for.
+      #
+      # A `private/answers.json` ON THE ISO IS NOT READ - measured, the wizard came up unchanged -
+      # because the setup script looks at `/usbkey`, `/mnt/usbkey` and `/system/boot` only, and a USB
+      # stick is rejected too unless its MBR carries GRUB (`0x1fe=aa55`, `0x3e=0203`).
+      #
+      # xorriso `-boot_image any replay` KEEPS THE ORIGINAL EL TORITO RECORD, so the remastered file
+      # still boots exactly as the pinned one did.
+      - name: add the smartos answer module to the ISO
+        if: steps.wanted.outputs.wanted == 'yes' && matrix.artifact.tag == 'iso-smartos-20261121T172607Z'
+        run: |
+          set -eu
+          cd "$GITHUB_WORKSPACE"
+          src="${{ steps.unpack.outputs.path }}"
+          out="$GITHUB_WORKSPACE/work/smartos-20261121T172607Z.iso"
+          mkdir -p stage/boot stage/local
+          cp smartos/media/loader.conf.local stage/boot/loader.conf.local
+          cp smartos/media/answers.json       stage/local/answers.json
+          apt-get -qq install -y xorriso >/dev/null 2>&1 || true
+          xorriso -indev "$src" -outdev "$out" -boot_image any replay \
+            -map stage/boot/loader.conf.local /boot/loader.conf.local \
+            -map stage/local/answers.json     /local/answers.json \
+            -commit
+          rm -f "$src"
+          [ "$(stat -c %s "$out")" -gt 600000000 ] || {
+            echo "::error::the remastered ISO is $(stat -c %s "$out") bytes; the pinned one is 642430976"
+            exit 1
+          }
+          echo "=== remastered with /local/answers.json and /boot/loader.conf.local"
+          echo "path=$out" >> "$GITHUB_OUTPUT"
+        id: smartos
+
       - name: pack into a tar
         if: steps.wanted.outputs.wanted == 'yes'
         # EVERY PUBLISHED ASSET IS ONE TAR, AND THIS IS WHERE THAT STARTS.
@@ -196,7 +249,10 @@ jobs:
         # self in the step above.
         run: |
           set -eu
-          src="${{ steps.unpack.outputs.path }}"
+          # SMARTOS WAS REMASTERED IN ITS OWN STEP, so its path comes from there. Every other row
+          # takes `unpack`'s output, which is the download itself or its decompressed self.
+          src="${{ steps.smartos.outputs.path }}"
+          if [ -z "$src" ]; then src="${{ steps.unpack.outputs.path }}"; fi
           dir=$(dirname "$src")
           base=$(basename "$src")
           case "$base" in

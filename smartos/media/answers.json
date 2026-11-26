@@ -1,0 +1,21 @@
+{
+  "config_console": true,
+  "skip_instructions": true,
+  "simple_headers": true,
+  "admin_mac": "52:54:00:56:4d:04",
+  "admin_ip": "dhcp",
+  "headnode_default_gateway": "none",
+  "dns_resolver1": "8.8.8.8",
+  "dns_resolver2": "8.8.4.4",
+  "dns_search": "example.com",
+  "ntp_host": "0.smartos.pool.ntp.org",
+  "skip_ntp_check": true,
+  "zpool_layout": "default",
+  "zpool_confirm_layout": "yes",
+  "bootpool": "zones",
+  "pisource": "media",
+  "install_pkgsrc": "no",
+  "root_password": "admin",
+  "hostname": "smartos",
+  "skip_final_confirm": true
+}
