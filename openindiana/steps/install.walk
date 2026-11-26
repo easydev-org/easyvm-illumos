@@ -84,122 +84,18 @@ step "the loader has handed over to the kernel"
   until "Loading unix"
   from console
   timeout 420
+# THERE IS NO LANGUAGE LIST HERE. THE OLD TEXT INSTALLER HAD ONE, AND ITS THREE STEPS WERE LEFT
+# BEHIND WHEN THIS FILE BECAME THE GUI FLOW - BEFORE the live desktop step, so they ran while the
+# guest was still booting.
+#
+# MEASURED on run 45849396700, step 5/38: forty attempts of `input ret` against a screen that was
+# already the MATE desktop ("Computer  jack's Home  Openindiana_Live_ X86  Trash"), waiting for
+# words that only exist in a text installer this medium does not have. The walk could never get past
+# it, which is why no GUI-ISO run has ever finished.
+#
+# THE INSTALLER IS STARTED FROM A TERMINAL, LATER IN THIS FILE (`sudo gui-install`), and its own
+# first page is where the language is chosen. Nothing here needs to press Return.
 
-
-# THE LANGUAGE QUESTION, WHICH THE MINIMAL MEDIUM NEVER SHOWED. MEASURED: the list is
-#
-#	1, Chinese - Simplified   2, Chinese - Traditional   3, English   4, French   ...
-#
-# and the prompt itself says "default is 3", so a single Return takes English.
-# THE ILLUMOS LOADER'S OWN MENU CAN HOLD THE BOOT, SO A RETURN IS SENT WITH EVERY LOOK.
-#
-# MEASURED on run 45835910098: the disk was freshly created (`disk.qcow2: 0 MiB`), the ISO was at
-# `bootindex=0`, and the screen nevertheless sat on
-#
-#	Welcome to illumos   1. Boot Multi User [Enter]   2. Boot Single User   ...
-#
-# for the whole sixty-attempt budget. That menu belongs to the loader inside the ISO, and its autoboot
-# does not always fire - the same medium on other runs went straight to `Preparing live image for
-# use`. A Return takes its preselected first row (`Boot Multi User`), which is what boots the live
-# system, and at the language prompt a Return is harmless because that prompt reads a NUMBER and an
-# empty line is its documented default.
-# THE LANGUAGE PAGE IS A RACE, AND THE DESKTOP IS THE WINNER - SO BOTH ARE ACCEPTED.
-#
-# MEASURED on the pod, run 4a0ff72: the loop below sent a Return every ten seconds to clear the ISO's
-# loader menu, and that Return ALSO accepted the language page's default - so the page was gone in a
-# blink and the loop then waited the rest of its budget for a list that would never come back, while
-# the MATE desktop sat on screen. `Boot Multi User` and `English` are the same fork in the road: either
-# the machine is still at the loader, or it is at the language list, or it is already on the desktop.
-#
-# SO THE GATE IS "THE LIVE IMAGE IS UP, IN ANY OF ITS THREE SHAPES", and the step after this one -
-# which already waits for `Applications`/`Places`/`System` - is the one that confirms the desktop.
-# THE LANGUAGE PAGE IS ANSWERED EXPLICITLY, BECAUSE A BARE RETURN DOES NOT ALWAYS TAKE.
-#
-# MEASURED on the pod: the loop below sent `ret` to clear the ISO's loader menu, and that Return got
-# the machine as far as the language list - where it then SAT at
-#
-#	To select the language you wish to use, enter a number [default is 3]:
-#
-# while the walk had already moved on to waiting for the desktop. The prompt reads a NUMBER, and a
-# page that is waiting for a number is not advanced by an empty Return on this console.
-#
-# SO `3` IS TYPED AND TAKEN, AND THE THREE SHAPES ARE STILL ALLOWED: the loader menu means "press
-# Return", the language list means "type 3", and the desktop means "it is already up". The gate below
-# accepts any of them and the next step waits for the desktop itself.
-# EACH ROUND SENDS BOTH ANSWERS, AND EACH IS HARMLESS WHERE IT DOES NOT APPLY.
-#
-# MEASURED on the pod: the loader menu is cleared by a Return; the language list is NOT ("enter a
-# number [default is 3]" sat there through a bare Return); and once the desktop is up, neither matters
-# because the gate has already matched.
-#
-# SO EVERY ROUND TYPES `3` AND THEN A RETURN. On the loader menu the `3` selects `3. Escape to loader
-# prompt`, which the following Return enters - and the next round's Return leaves. That is noisy but it
-# is bounded, and the loop below stops the moment the desktop paints. The alternative - branching on
-# which page is up - needs a `then`/`else` the step vocabulary does not have.
-# THE LOADER MENU AND THE LANGUAGE LIST TAKE DIFFERENT ANSWERS, AND `when:` TELLS THEM APART.
-#
-# MEASURED on the pod, twice:
-#
-#	loader menu   `1. Boot Multi User [Enter]` - a Return takes row 1
-#	language list `enter a number [default is 3]` - a Return does NOTHING here; `3` is required
-#
-# and typing `3` at the loader menu selects `3. Escape to loader prompt` instead, which put the kernel
-# on a path that hung at `Booting...` with the serial line silent for ten minutes.
-#
-# SO TWO STEPS, EACH GATED ON ITS OWN PAGE BY `when:`. A step whose words are not on screen does not
-# run at all, so the pair is a branch without needing `if`/`then`.
-# THE LOADER MENU IS CLEARED FIRST, WITH RETURNS, UNTIL THE LANGUAGE LIST APPEARS.
-#
-# MEASURED on the pod, three times, each closing a different door:
-#
-#	`3` at the loader menu   selects `3. Escape to loader prompt`; the kernel then hangs at
-#	                        `Booting...` with the serial line silent for ten minutes.
-#	a bare Return at the language list   does nothing - `enter a number [default is 3]` waits
-#	a `when: [Chinese]` guard   did not fire, because the frame the guard reads had not been
-#	                        repainted since the page changed.
-#
-# SO THE TWO PAGES GET TWO STEPS: a loop that sends ONLY Returns while waiting for `Chinese` to
-# appear, and then one explicit `3`+Return. Neither can misfire on the other's page.
-step "wait for the language list, clearing the loader menu as it comes"
-  repeat
-    do
-      item "read the screen"
-        read
-          name lang
-      item "is the language list up"
-        check
-          source lang
-          mode text
-          name seen
-          rect [0, 0, 1024, 768]
-          rect_at [1024, 768]
-          words [[Chinese], [Swedish]]
-      item "press Return, which clears the loader menu and is ignored here"
-        if seen
-          then
-            item
-              settle 1
-          else
-            item
-              input ret
-              settle 8
-    until
-      seen
-    max 40
-
-
-step "type 3, which is English"
-  input text "3"
-  settle 3
-
-
-step "take it"
-  input ret
-  settle 10
-
-
-# THE MATE DESKTOP IS THE WITNESS THAT THE LIVE IMAGE IS UP. Its panel draws Applications, Places and
-# System along the top, and the desktop carries the two install launchers.
 step "the live mate desktop is on screen"
   repeat
     do
@@ -657,64 +553,60 @@ step "install"
 #
 # The first two are the wizard closing; the last two are the live image restarting, which only
 # happens after the wizard closes. All four mean the install is over.
+# THE FINISH IS A BARE `until` WITH FOUR ANSWERS, AND THE POINTER WAKES THE BLANK PANEL.
+#
+# MEASURED on run 45825688651: round 1 read the live desktop, round 30 - five minutes later - read
+# `see: 0 word(s):`, and every round after read the same empty string. The MATE screensaver BLANKS the
+# panel before it draws any lock dialog, so nothing is on screen to match until it is woken.
+#
+# MEASURED on the recording of run 45806933916, sampled every 25 seconds through the window I had
+# wrongly written off as "28% then rebooted": t=950 read `Completing transfer process 99%`, t=995 the
+# wizard was gone, t=1010 the disk's own loader menu appeared. So the install finishes at about
+# fifteen minutes, and the wizard's page is visible for only a few seconds before it closes itself.
+#
+# THE FOUR WITNESSES, IN THE ORDER THEY APPEAR:
+#
+#	installation is complete   the wizard's own last page, a few seconds
+#	Boot Multi User            the DISK's loader menu, about ten seconds of autoboot
+#	Chainload disk0            the same menu's last row
+#	Chinese                    the language page, which only returns after a reboot
+#
+# The pointer click at (512,400) wakes the panel. It cannot press `Quit`: the wizard's buttons are on
+# its bottom row at y=708, and the desktop's icons are down the left edge.
 step "the install finishes and the disk's own loader comes up"
   repeat
     do
-      # `click_at:` GOES BESIDE THE CLICK, NOT INSIDE A FOLDED `input:` - see
-      # easydev-org/easyvm#14. The folded form nests the click in a child step, and the child is
-      # what `rescalePoint` reads; the declaration stays on the parent and is never seen, so the
-      # engine refuses a coordinate the file has already declared:
-      #
-      #	click (512, 400) is a coordinate measured at 1920x1080 but the framebuffer is 1024x768
-      #
-      # ...on a walk whose own `resolution: 1024x768` sits eight hundred lines above it.
-      item "wake the panel, which blanks before it locks"
+      item "wake the panel"
         input 512 400
         click_at [1024, 768]
-        settle 3
+        settle 8
       item "read the screen"
         read
           name done
-      item "is it finished"
-        check
-          source done
-          mode text
-          name finished
-          rect [0, 0, 1024, 768]
-          rect_at [1024, 768]
-          words [[installation, is, complete], [Boot, Multi, User], [Chainload, disk0], [Chinese]]
-      item "leave it alone while it copies"
-        settle 8
     until
-      finished
+      bind up
+      source done
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[installation, is, complete], [Boot, Multi, User], [Chainload, disk0], [Chinese]]
     max 300
 
 
+# THE SCREEN MAY STILL BE LOCKED, AND UNLOCKING IS SAFE NOW: THE WIZARD IS CLOSED EITHER WAY.
 step "unlock the screen if the screensaver came up"
   repeat
     do
       item "read the screen"
         read
           name lockstate
-      item "is the lockscreen up"
-        check
-          source lockstate
-          mode text
-          name locked
-          rect [0, 0, 1024, 768]
-          rect_at [1024, 768]
-          words [[Enter, your, password], [Default, User]]
-      item "type the account name when it is"
-        if locked
-          then
-            item
-              input text "{{ user }}"
-              settle 2
-            item
-              input ret
-              settle 3
-      item "look again"
-        settle 5
+      item "type the account name when the lock is up"
+        input text "{{ user }}"
+        settle 2
+      item "take it"
+        input ret
+        settle 4
     until
       bind gone
       source lockstate
@@ -723,10 +615,6 @@ step "unlock the screen if the screensaver came up"
       rect_at [1024, 768]
       without [[Enter, your, password], [Default, User]]
     max 20
-
-
-step "let the last extent land"
-  settle 30
 
 
 step "stop the machine"
