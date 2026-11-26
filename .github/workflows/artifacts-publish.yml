@@ -223,7 +223,13 @@ jobs:
           set -eu
           cd "$GITHUB_WORKSPACE"
           src="${{ steps.unpack.outputs.path }}"
-          out="$GITHUB_WORKSPACE/work/smartos-20261121T172607Z.iso"
+          # THE OUTPUT MUST NOT BE THE INPUT'S OWN NAME. MEASURED on run 45894993120: `$out` was
+          # `work/smartos-20261121T172607Z.iso`, which is exactly where `unpack` had put the download
+          # - so xorriso wrote the remaster, `rm -f "$src"` deleted it (same path), and the size check
+          # answered `stat: cannot statx ... No such file or directory` about a file that had just
+          # been built correctly.
+          final="$GITHUB_WORKSPACE/work/smartos-20261121T172607Z.iso"
+          out="$GITHUB_WORKSPACE/work/smartos-remastered.iso"
           mkdir -p stage/boot stage/local
           cp smartos/media/loader.conf.local stage/boot/loader.conf.local
           cp smartos/media/answers.json       stage/local/answers.json
@@ -244,12 +250,13 @@ jobs:
             -map stage/local/answers.json     /local/answers.json \
             -commit
           rm -f "$src"
-          [ "$(stat -c %s "$out")" -gt 600000000 ] || {
-            echo "::error::the remastered ISO is $(stat -c %s "$out") bytes; the pinned one is 642430976"
+          mv "$out" "$final"
+          [ "$(stat -c %s "$final")" -gt 600000000 ] || {
+            echo "::error::the remastered ISO is $(stat -c %s "$final") bytes; the pinned one is 642430976"
             exit 1
           }
-          echo "=== remastered with /local/answers.json and /boot/loader.conf.local"
-          echo "path=$out" >> "$GITHUB_OUTPUT"
+          echo "=== remastered with /local/answers.json and /boot/loader.conf.local ($(stat -c %s "$final") bytes)"
+          echo "path=$final" >> "$GITHUB_OUTPUT"
         id: smartos
 
       - name: pack into a tar
