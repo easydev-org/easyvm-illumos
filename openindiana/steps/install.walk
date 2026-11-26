@@ -994,15 +994,46 @@ step "wait for the install to finish"
 # SO THE COMMAND IS SPLIT: `svcadm enable` with its target on ONE short line (60 characters, and
 # `enable` alone is enough - `-r` only restarts dependants, which a freshly-installed service has
 # none of), and the state is read in the gate below where it belongs.
-step "enable the display manager in the root shell"
-  input text "svcadm enable svc:/application/graphical-login/lightdm"
-  type_gap 0.12
-  settle 8
-
-
-step "run the enable"
-  input ret
-  settle 12
+# THE ENABLE IS RETRIED UNTIL THE SERVICE IS ONLINE, BECAUSE `pkg` REGISTERS IT LATE.
+#
+# MEASURED on run 45747148592, frame by frame from its own recording:
+#
+#	t=2560  svcs: Pattern 'svc:/application/graphical-login/lightdm:default' doesn't match any
+#	        instances                                  <- the service does not EXIST yet
+#	t=2580  Loading smf(7) service descriptions: 26    <- SMF is still importing manifests
+#	t=2650  [1]+ Done pkg install --accept ...         <- the backgrounded pkg only NOW reports done
+#	t=2700  svc:/application/graphical-login/lightdm:default disabled
+#
+# So `pkg`'s post-install actuators import the new manifests into SMF AFTER the package's own
+# `/tmp/pkg.exit` and even after the `MATEREADY` gate - the desktop file lands first, the service
+# second. A single `svcadm enable` sent in that window either finds nothing to enable or is answered
+# by a service that SMF is still registering, and the `disabled` this stage kept reading is the
+# result of that race rather than of a missing command.
+#
+# SO THE ENABLE AND THE QUESTION ARE ONE LOOP: enable, ask, and enable again while the answer is not
+# `online`. `svcadm enable` on an already-online service is a no-op, so the retry cannot hurt.
+step "enable the display manager, retried until it is online"
+  repeat
+    do
+      item "ask for the service's state, or enable it"
+        input text "clear; svcs -H -o state svc:/application/graphical-login/lightdm || svcadm enable svc:/application/graphical-login/lightdm"
+        type_gap 0.12
+        settle 8
+      item "press return on its own"
+        input ret
+        settle 12
+      item "read the screen"
+        read
+          name dmstate
+    until
+      bind up
+      source dmstate
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      words [[online]]
+      without [disabled]
+    max 40
 
 
 # THE STATE IS ASKED AT THE CONSOLE, NOT OVER SSH, FOR THE REASON THE STEP ABOVE DOCUMENTS:
@@ -1017,36 +1048,7 @@ step "run the enable"
 # AND `online` ALONE IS A WORD A BOOT LOG CAN CARRY. `svcs` prints one word; a machine that is still
 # booting prints `online` in its SMF line. The gate looks for `lightdm` AND `online` in the same
 # reading, which is the service's own line and nothing else.
-step "the display manager reports online"
-  repeat
-    do
-      # THE SAME TRUNCATION HAPPENS TO THE QUESTION AS TO THE ENABLE: 78 characters need longer than
-      # a three-second settle before the Return lands. The recording of run 45741233694 shows both
-      # lines cut in the same place - `lightdm:defa` and `lightdm:default` - which is a line still
-      # arriving, not a slow service manager.
-      item "ask the service manager"
-        input text "clear; svcs -H -o fmri,state svc:/application/graphical-login/lightdm:default"
-        type_gap 0.12
-        settle 8
-      item "press return on its own"
-        input ret
-        settle 10
-      item "read the screen"
-        read
-          name dmstate
-    until
-      bind up
-      source dmstate
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      words [[lightdm, online]]
-    max 30
 
-
-# A DISPLAY MANAGER THAT IS ONLINE AND A GNOME SESSION ARE TWO DIFFERENT FACTS, and this system is
-# slow enough to reach the second one minutes after the first. The screen is the only thing that can
-# tell them apart, so the walk looks at it - the same picture gate every other desktop wait here uses.
 step "the desktop is on screen"
   repeat
     do
