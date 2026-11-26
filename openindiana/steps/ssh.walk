@@ -224,6 +224,27 @@ step "start X and MATE in a ConsoleKit session"
   timeout 300
 
 
+# XORG STARTED AND DIED: "no screens found". THE NEXT STEP ASKS WHY, BEFORE THE GATE SPENDS TEN MINUTES.
+#
+# MEASURED on run 45876790670, step 10/16 - `startx` did start the server:
+#
+#	(==) Using system config directory "/usr/share/X11/xorg.conf.d"
+#	(EE) Fatal server error:
+#	(EE) no screens found(EE)
+#	(EE) Server terminated with error (1). Closing log file.
+#	xinit: giving up
+#
+# "no screens found" MEANS XORG DETECTED NO DISPLAY DEVICE IT HAS A DRIVER FOR - not that the device is
+# missing (this walk passes `-device VGA`), and not that lightdm is involved. THE GUI INSTALLER DREW A
+# DESKTOP ON THE SAME DEVICE in run 45859729662, so the difference is which driver the installed system
+# can load, and the log above was truncated to its last fifteen lines. THIS STEP READS THE WHOLE THING
+# plus the driver directory and /etc/X11, so the next change is made from evidence.
+step "why Xorg found no screens"
+  run "echo '--- Xorg.0.log ---'; sed -n '1,90p' /var/log/Xorg.0.log 2>&1; echo '--- drivers ---'; ls /usr/lib/xorg/modules/drivers/ 2>&1; echo '--- /etc/X11 ---'; ls -R /etc/X11 2>&1 | head -40; echo '--- packages ---'; pkg list -H 2>/dev/null | grep -iE 'xorg|video|vesa' | head -20; echo '--- devinfo gfx ---'; prtconf -d 2>/dev/null | grep -iE 'display|vga|video' | head -8"
+  via ssh
+  timeout 180
+
+
 step "the desktop is on screen"
   repeat
     do
