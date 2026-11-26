@@ -790,22 +790,25 @@ step "the root role was assumed"
 # is the DESKTOP FILE, asked directly, which is the fact this whole stage is for.
 # 69 CHARACTERS AT 0.08s IS 5.5 SECONDS OF TYPING UNDER A 5-SECOND SETTLE - it failed once already.
 step "start the install in the background"
-  # `lightdm` AND `lightdm-gtk-greeter` ARE INSTALLED BY NAME, BECAUSE `mate_install` DOES NOT BRING
-  # EITHER. MEASURED on run 45753704107: lightdm's manifest existed (so the package was there) but the
-  # service sat at `offline` for forty attempts - enabled, started, failed. The freebsd walk in this
-  # same repository names the same three packages for the same reason:
+  # THE PACKAGE SET IS THE ONE OpenIndiana's OWN HANDBOOK GIVES, AND NOTHING ELSE:
   #
-  #	sd-bsd/freebsd/steps/install.walk:  pkg install ... xfce lightdm lightdm-gtk-greeter
+  #	docs.openindiana.org/handbook/getting-started/:
+  #		pkg install mate_install
+  #		svcadm enable -r /application/graphical-login/lightdm
   #
-  # A display manager with no greeter binary on the system starts, finds nothing to exec, and exits -
-  # which SMF reports as `offline`. The installer's recommended size is 5.6 GiB and this disk is 25,
-  # so the extra packages cost nothing that matters here.
-  # 96 CHARACTERS AT 0.12s IS 11.5 SECONDS OF TYPING, so the settle is 16 - four and a half seconds
-  # of margin, the same rule every other console line here follows. A settle that ends first sends the
-  # Return into the middle of the line, which is the defect this file has already paid for twice.
-  input text "pkg install --accept --deny-new-be mate_install lightdm lightdm-gtk-greeter > /tmp/pkg.log 2>&1 &"
+  # A GUESSED PACKAGE NAME WOULD FAIL THE WHOLE COMMAND. `pkg install A B C` with one name that does
+  # not exist installs NOTHING - so adding `lightdm-gtk-greeter` on the theory that a missing greeter
+  # explains `offline` would have thrown away the `mate_install` that four runs proved works. The
+  # handbook names two things and this line names two things.
+  #
+  # `lightdm` IS NAMED SEPARATELY because the discussion list says so ("Try installing mate_install
+  # and lightdm"), and because its FMRI existed while its state was `offline` - enabled, started,
+  # failed - which is a package that is present and a greeter that is not.
+  #
+  # 62 CHARACTERS AT 0.12s IS 7.5 SECONDS, so the settle is 12.
+  input text "pkg install --accept --deny-new-be mate_install lightdm > /tmp/pkg.log 2>&1 &"
   type_gap 0.12
-  settle 16
+  settle 12
 
 
 step "run the install"
@@ -1077,16 +1080,37 @@ step "enable the display manager, retried until it is online"
       item "press return on the enable"
         input ret
         settle 8
+      # `svcs -x` IS THE COMMAND THAT ANSWERS "WHY IS IT NOT ONLINE", and it is what this loop has
+      # been missing for three runs. svcs(1): "-x  Explain the state of the service: list the
+      # reasons it is not online, and the log file to read." Every previous attempt read one word -
+      # `disabled`, then `offline` - and guessed at the cause. This reads the cause.
+      #
+      # ONE SHORT LINE PER ITEM, because 130 characters in one does not arrive before its Return.
       item "ask for the service's state"
         input text "clear; svcs -H -o state svc:/application/graphical-login/lightdm:default"
         type_gap 0.12
         settle 8
       item "press return on the question"
         input ret
-        settle 12
-      item "read the screen"
+        settle 10
+      # THE STATE IS READ BEFORE THE EXPLANATION IS ASKED FOR, AND THEY ARE TWO SEPARATE READINGS.
+      # `svcs -x` prints the words "not online" for a service in this state - and a gate looking for
+      # `online` would match that and pass. So the state goes into `dmstate` alone, on a screen that
+      # holds nothing else (`clear` first), and the explanation is asked for only after that reading
+      # has been taken, into a binding the gate never looks at.
+      item "read the state, on a screen that holds only the state"
         read
           name dmstate
+      item "ask why it is not online, for the log"
+        input text "svcs -x svc:/application/graphical-login/lightdm:default 2>&1 | tail -8"
+        type_gap 0.12
+        settle 9
+      item "press return on the explanation"
+        input ret
+        settle 8
+      item "read the explanation, which the gate does not use"
+        read
+          name dmwhy
     until
       bind up
       source dmstate
