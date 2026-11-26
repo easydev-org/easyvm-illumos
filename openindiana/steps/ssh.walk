@@ -135,6 +135,32 @@ step "prove the boot environment is the one that was installed"
 #
 # SO THE COMMAND MUST FAIL WHEN THE STATE IS WRONG. `[ "$(svcs -H -o state ...)" = online ]` is the
 # assertion; the state is echoed either way so the log always says what it was.
+# ASK SMF WHY, BEFORE ASSERTING THAT IT IS HEALTHY.
+#
+# MEASURED on run 45863256664: lightdm was in `maintenance` - SMF's state for "this instance crashed and
+# stays down until a person repairs it" - and the walk spent its remaining ten minutes waiting for a
+# desktop that was never going to be drawn. `svcs -x` IS THE COMMAND THAT ANSWERS WHY (svcs(1): "-x
+# Explain the state of the service: list the reasons it is not online, and the log file to read"), and
+# nothing in this file had ever asked it. The three steps below ask, in the order a diagnosis needs:
+#
+#	state + why      what SMF says, in its own words
+#	the method log   what the start method printed before it failed
+#	the assertion    fail if it is not online, so the next step cannot wait on a dead desktop
+#
+# ALL THREE RUN EVEN WHEN THE SERVICE IS HEALTHY - `svcs -x` on a working service prints nothing, which
+# is itself the evidence that there was nothing to explain.
+step "ask SMF what state lightdm is in, and why"
+  run "svcs -H -o fmri,state svc:/application/graphical-login/lightdm:default; echo '--- svcs -x ---'; svcs -x svc:/application/graphical-login/lightdm:default 2>&1 | head -25"
+  via ssh
+  timeout 180
+
+
+step "read lightdm's own method log"
+  run "tail -30 /var/svc/log/application-graphical-login-lightdm:default.log 2>&1"
+  via ssh
+  timeout 180
+
+
 step "the session is the one the install stage left"
   ssh "s=$(svcs -H -o state svc:/application/graphical-login/lightdm:default); echo \"lightdm=$s\"; [ \"$s\" = online ]"
   timeout 180
