@@ -234,7 +234,7 @@ step "what session files and greeters this disk has"
 # can load, and the log above was truncated to its last fifteen lines. THIS STEP READS THE WHOLE THING
 # plus the driver directory and /etc/X11, so the next change is made from evidence.
 step "what drivers and framebuffers this disk has"
-  run "echo '--- fbs ---'; ls /dev/fbs/ 2>&1 | tr '\\n' ' '; echo; echo '--- kernel drivers ---'; ls /kernel/drv/amd64/ | grep -iE 'vga|fb|display' | tr '\\n' ' '; echo; echo '--- dmesg vga ---'; dmesg | grep -iE 'vga|vgatext|fbt|display' | head -8; echo '--- Xorg -configure ---'; Xorg -configure 2>&1 | tail -12"
+  run "echo '--- fbs ---'; ls /dev/fbs/ 2>&1 | tr '\\n' ' '; echo; echo '--- kernel drivers ---'; ls /kernel/drv/amd64/ | grep -iE 'vga|fb|display' | tr '\\n' ' '; echo; echo '--- dmesg vga ---'; dmesg | grep -iE 'vga|vgatext|fbt|display' | head -8; echo '--- sudo ---'; sudo -n true && echo SUDO_OK || echo SUDO_NO"
   via ssh
   timeout 180
 
@@ -276,8 +276,28 @@ step "what drivers and framebuffers this disk has"
 # vgafb driver is not attached, and illumosfb will have nothing to open unless it is. This step prints
 # the driver list, the framebuffers and the kernel's own module table BEFORE trying anything, then
 # starts the server itself - no `startx`, whose script needs a `readlink` this shell does not have.
-step "start Xorg directly, with a driver this disk actually ships"
-  run "{ for d in illumosfb modesetting; do echo 'Section Device' > /tmp/x.org; echo 'Identifier Card0' >> /tmp/x.org; echo \"Driver $d\" >> /tmp/x.org; echo 'EndSection' >> /tmp/x.org; Xorg :0 -config /tmp/x.org -logfile /tmp/Xorg-$d.log > /tmp/Xorg-$d.out 2>&1 & sleep 14; if pgrep -f 'Xorg :0' > /dev/null; then echo DRIVER_UP $d; break; else echo DRIVER_DIED $d; grep -E 'EE|No devices|Fatal' /tmp/Xorg-$d.log | head -4; fi; done; echo '--- server ---'; pgrep -fl 'Xorg :0' | head -3; echo '--- mate ---'; DISPLAY=:0 nohup dbus-run-session mate-session > /tmp/mate.log 2>&1 & sleep 20; pgrep -fl 'mate-session|mate-panel' | head -4; tail -6 /tmp/mate.log; }"
+# XORG NEEDS ROOT, AND THIS SHELL IS `vmuser`. THAT IS WHY HE WROTE NO LOG AT ALL.
+#
+# MEASURED on run 45886860218, step 10/17:
+#
+#	--- Xorg -configure ---
+#	The '-configure' option can only be used by root.
+#	DRIVER_DIED illumosfb
+#	grep: can't open "/tmp/Xorg-illumosfb.log"
+#
+# LIGHTDM'S OWN XORG DID WRITE /var/log/Xorg.0.log (it runs as root), and its answer there was
+# `(EE) No devices detected.` Mine produced NOTHING - not even an empty file - because the server exits
+# on the permission before it opens its log. So the last four driver experiments were all measuring the
+# same thing: an unprivileged Xorg. THE DEVICE ITSELF IS ATTACHED, which dmesg says in its own words:
+#
+#	device pciclass,030000@2(display#1) keeps up device scsiclass,05@2,0(cdrom#1), but the former is
+#	not power managed
+#
+# `pciclass,030000` IS the VGA-compatible display controller.
+#
+# SO EVERY SERVER COMMAND RUNS UNDER `sudo -n`, and the step proves sudo works before it relies on it.
+step "start Xorg as root, with a driver this disk ships"
+  run "{ sudo -n true && echo SUDO_OK || echo SUDO_NO; for d in illumosfb modesetting; do echo 'Section Device' > /tmp/x.org; echo 'Identifier Card0' >> /tmp/x.org; echo \"Driver $d\" >> /tmp/x.org; echo 'EndSection' >> /tmp/x.org; sudo -n Xorg :0 -config /tmp/x.org -logfile /tmp/Xorg-$d.log > /tmp/Xorg-$d.out 2>&1 & sleep 14; if sudo -n pgrep -f 'Xorg :0' > /dev/null; then echo DRIVER_UP $d; break; else echo DRIVER_DIED $d; cat /tmp/Xorg-$d.out | tail -6; grep -E 'EE|No devices|Fatal' /tmp/Xorg-$d.log 2>&1 | head -4; fi; done; echo '--- server ---'; sudo -n pgrep -fl 'Xorg :0' | head -3; echo '--- mate ---'; sudo -n env DISPLAY=:0 dbus-run-session mate-session > /tmp/mate.log 2>&1 & sleep 20; pgrep -fl 'mate-session|mate-panel' | head -4; tail -8 /tmp/mate.log; }"
   via ssh
   timeout 500
 
