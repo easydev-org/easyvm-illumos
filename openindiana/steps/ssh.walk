@@ -155,6 +155,25 @@ step "ask SMF what state lightdm is in, and why"
   timeout 180
 
 
+# THE LOG SAYS WHAT lightdm WANTED AND DID NOT FIND, AND THE NEXT QUESTION IS WHAT ELSE IS DOWN.
+#
+# MEASURED on run 45871117852, from lightdm's own method log:
+#
+#	WARNING: Failed to get list of logind seats: ... The name org.freedesktop.login1 was not provided
+#	WARNING: Error getting user list from org.freedesktop.Accounts: ... was not provided
+#	WARNING: Error activating ConsoleKit session: CkSeatError.Code0: Activation is not supported
+#	lightdm: Got tty: '/dev/vt/7'
+#	[ Method "start" exited with status 0. ]          <- the PROCESS ended, so SMF counts a failure
+#
+# THREE D-BUS SERVICES IT WANTS - logind, AccountsService, ConsoleKit - ARE NOT THERE, so the question
+# is not "does lightdm start" but "which of its dependencies are down". THIS STEP ASKS SMF FOR ALL OF
+# THEM AT ONCE, because the answer decides the fix and guessing has already cost three runs.
+step "what lightdm depends on, and which of those are down"
+  run "svcs -d svc:/application/graphical-login/lightdm:default; echo '--- states ---'; svcs -H -o fmri,state svc:/application/graphical-login/lightdm:default $(svcs -dH -o fmri svc:/application/graphical-login/lightdm:default) ; echo '--- dbus names ---'; ls /var/svc/log/ | grep -iE 'consolekit|account|dbus' | head"
+  via ssh
+  timeout 180
+
+
 step "read lightdm's own method log"
   run "tail -30 /var/svc/log/application-graphical-login-lightdm:default.log 2>&1"
   via ssh
