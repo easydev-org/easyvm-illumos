@@ -1048,10 +1048,15 @@ step "enable the display manager, retried until it is online"
       item "press return on the clear"
         input ret
         settle 4
-      item "enable it and everything it depends on"
-        input text "svcadm enable -r svc:/application/graphical-login/lightdm"
+      # `-rs`: -r enables the dependencies RECURSIVELY (svcadm(8) Example 3: "enables the foo:bar
+      # instance, and all instances on which it depends") and -s makes svcadm WAIT until the instance
+      # is online or degraded, returning early if it decides that cannot happen. Without -s the
+      # command returns the moment the request is accepted, which reads as `offline` at the next
+      # prompt even when the start is still in progress.
+      item "enable it and everything it depends on, and wait"
+        input text "svcadm enable -rs svc:/application/graphical-login/lightdm"
         type_gap 0.12
-        settle 8
+        settle 20
       item "press return on the enable"
         input ret
         settle 8
