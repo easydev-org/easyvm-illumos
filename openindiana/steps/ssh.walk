@@ -205,8 +205,21 @@ step "what session files and greeters this disk has"
   timeout 120
 
 
-step "start a MATE session in a ConsoleKit session"
-  run "nohup ck-launch-session dbus-run-session mate-session > /tmp/mate-session.log 2>&1 & sleep 12; pgrep -fl 'mate-session|mate-panel' | head -5; echo '--- log ---'; tail -12 /tmp/mate-session.log"
+# `mate-session` NEEDS AN X SERVER AND NOTHING IN THE LAST COMMAND STARTED ONE.
+#
+# MEASURED on run 45874038795, step 9/16 - and this is the whole answer:
+#
+#	** (mate-session:1690): WARNING **: 18:15:57.802: Cannot open display:
+#
+# `ck-launch-session` opens a CONSOLEKIT SESSION; it does not start X. mate-session then tries to
+# connect to the display lightdm would have created, finds nothing, and exits. THE INVENTORY STEP ABOVE
+# IS WHAT MADE THIS OBVIOUS - it found `mate.desktop`, `xterm.desktop` and `lightdm-gtk-greeter.desktop`
+# all present, so the desktop is installed and only the X server was missing.
+#
+# `startx` IS THE COMMAND THAT STARTS BOTH: it launches the X server and then the client, and wrapped in
+# `ck-launch-session` the session has the seat and runtime directory MATE looks for.
+step "start X and MATE in a ConsoleKit session"
+  run "nohup ck-launch-session dbus-run-session startx > /tmp/startx.log 2>&1 & sleep 20; pgrep -fl 'Xorg|Xsun|X :|mate-session|mate-panel' | head -6; echo '--- log ---'; tail -15 /tmp/startx.log"
   via ssh
   timeout 300
 
