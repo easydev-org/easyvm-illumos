@@ -227,7 +227,18 @@ jobs:
           mkdir -p stage/boot stage/local
           cp smartos/media/loader.conf.local stage/boot/loader.conf.local
           cp smartos/media/answers.json       stage/local/answers.json
-          apt-get -qq install -y xorriso >/dev/null 2>&1 || true
+          # XORRISO IS NOT ON THE RUNNER, AND `|| true` HID THAT FOR ONE RUN: the step then died
+          # with `xorriso: command not found` and exit 127, which reads like a missing file rather
+          # than a missing tool. It is installed with sudo (the runner user has no root) and the
+          # install is CHECKED, so a future image without it fails here with a sentence.
+          if ! command -v xorriso >/dev/null 2>&1; then
+            sudo apt-get -qq update >/dev/null 2>&1 || true
+            sudo apt-get -qq install -y xorriso >/dev/null 2>&1 || true
+          fi
+          command -v xorriso >/dev/null 2>&1 || {
+            echo "::error::xorriso is not installed and could not be installed; the smartos ISO cannot be remastered"
+            exit 1
+          }
           xorriso -indev "$src" -outdev "$out" -boot_image any replay \
             -map stage/boot/loader.conf.local /boot/loader.conf.local \
             -map stage/local/answers.json     /local/answers.json \
