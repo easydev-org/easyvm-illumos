@@ -226,14 +226,55 @@ step "the shell is a root prompt"
 #
 # THE SIZE IS NOT A TUNING KNOB FOR THE ENGINE: it is what makes this disk's artifact comparable with
 # every other guest's, all of which are packed the same way.
+# THE FILL GOES INTO A DATASET WITH COMPRESSION OFF, BECAUSE THE POOL COMPRESSES TOO.
+#
+# MEASURED, three fills on this guest:
+#
+#	560 MiB zeros    disk 635 MiB -> artifact 224 MiB
+#	560 MiB urandom  disk 651 MiB -> artifact 226 MiB
+#	1.7 GiB urandom  disk 683 MiB -> artifact 227 MiB
+#
+# The last one is the tell: 1.7 GiB written and the working disk only moved 30 MiB, so `dd` was not
+# even reaching the disk - `zones` is a ZFS pool and its datasets default to lz4, which takes a large
+# bite even out of /dev/urandom (it has structure). `save` then compresses the rest.
+#
+# SO THE FILL CREATES ITS OWN DATASET WITH `compression=off`, and the data lands on the disk as
+# itself. `dd` then `sync` then the echo, so `PADDED` is not printed until the bytes are on disk.
 step "give the pool the space the published artifact is measured by"
-  input text "dd if=/dev/urandom of=/zones/artifact-floor bs=1m count=1700 >/dev/null 2>&1; sync; echo FILLED"
+  input text "zfs create -o compression=off -o mountpoint=/zones/artifact zones/artifact; dd if=/dev/urandom of=/zones/artifact/floor bs=1m count=1500 2>/dev/null; sync; echo PADDED"
   settle 2
 
 
 step "run the fill"
   input ret
-  settle 60
+  settle 5
+
+
+# THE FILL IS WAITED FOR, NOT SLEPT THROUGH. MEASURED on run 45902049747: the command was typed and
+# followed by `settle 60`, and the walk then killed the machine - with `dd` still writing. The disk
+# grew from 224 MiB to only 653 MiB of the 1.7 GiB asked for, and the artifact was compressed from
+# that partial fill and refused again. `PADDED` has no letter that this reader confuses
+# with another (the same care openindiana's MATEREADY needed).
+#
+# `PADDED` is echoed by the command itself, so this waits for the writer to finish rather than for a
+# duration to pass. `sync` runs before the echo, which is what makes the data on disk when it prints.
+step "the fill finished"
+  repeat
+    do
+      item
+        settle 15
+      item "read the screen"
+        read
+          name filled
+    until
+      bind up
+      source filled
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[PADDED]]
+    max 40
 
 
 step "stop the machine"
