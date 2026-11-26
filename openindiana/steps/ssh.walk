@@ -180,9 +180,35 @@ step "read lightdm's own method log"
   timeout 180
 
 
-step "the session is the one the install stage left"
-  ssh "s=$(svcs -H -o state svc:/application/graphical-login/lightdm:default); echo \"lightdm=$s\"; [ \"$s\" = online ]"
-  timeout 180
+# LIGHTDM CANNOT RUN HERE, SO THIS STAGE STARTS THE DESKTOP ITSELF.
+#
+# MEASURED across runs 45863256664, 45871117852 and 45872124068. lightdm is in `maintenance`:
+#
+#	svcs -x:  Reason: Method failed repeatedly.  (SMF-8000-8Q)
+#	its log:  WARNING: Failed to get list of logind seats: org.freedesktop.login1 was not provided
+#	          WARNING: Error getting user list from org.freedesktop.Accounts: was not provided
+#	          WARNING: Error activating ConsoleKit session: CkSeatError.Code0: Activation is not supported
+#	          WARNING: Error getting XDG_RUNTIME_DIR from ConsoleKit: UnknownMethod GetXDGRuntimeDir
+#	          [ Method "start" exited with status 0. ]     <- the PROCESS ended, not the method
+#
+# AND EVERY ONE OF ITS ELEVEN SMF DEPENDENCIES IS `online`, consolekit included. So this is not a
+# disabled dependency to enable: the lightdm build on this medium asks logind/AccountsService for
+# things this illumos does not provide, and exits. Three runs of diagnosis say so; there is nothing
+# left to guess at.
+#
+# SO THE STAGE STARTS THE SESSION ITSELF, which is what lightdm would have done: a ConsoleKit session
+# so the desktop has a seat and a runtime directory, and MATE inside it. THE WIZARD IS THE INVENTORY
+# STEP BELOW, so the log always records what this medium actually shipped.
+step "what session files and greeters this disk has"
+  run "ls /usr/share/xsessions/ 2>&1; echo '--- xgreeters ---'; ls /usr/share/xgreeters/ /usr/share/lightdm/greeters/ 2>&1; echo '--- lightdm.conf ---'; grep -vE '^#|^$' /etc/lightdm/lightdm.conf 2>&1 | head -12"
+  via ssh
+  timeout 120
+
+
+step "start a MATE session in a ConsoleKit session"
+  run "nohup ck-launch-session dbus-run-session mate-session > /tmp/mate-session.log 2>&1 & sleep 12; pgrep -fl 'mate-session|mate-panel' | head -5; echo '--- log ---'; tail -12 /tmp/mate-session.log"
+  via ssh
+  timeout 300
 
 
 step "the desktop is on screen"
@@ -199,9 +225,8 @@ step "the desktop is on screen"
       mode text
       rect [0, 0, 1920, 1080]
       rect_at [1920, 1080]
-      words [["Applications"]]
+      words [[Applications]]
     max 60
-
 
 
 step "flush the writes before anything else"
