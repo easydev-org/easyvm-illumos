@@ -788,10 +788,11 @@ step "the root role was assumed"
 #
 # THE EXIT STATUS IS NOT WRITTEN BY THIS LINE - a backgrounded command's `$?` is the `&`'s. The gate
 # is the DESKTOP FILE, asked directly, which is the fact this whole stage is for.
+# 69 CHARACTERS AT 0.08s IS 5.5 SECONDS OF TYPING UNDER A 5-SECOND SETTLE - it failed once already.
 step "start the install in the background"
   input text "pkg install --accept --deny-new-be mate_install > /tmp/pkg.log 2>&1 &"
-  type_gap 0.08
-  settle 5
+  type_gap 0.12
+  settle 9
 
 
 step "run the install"
@@ -933,9 +934,19 @@ step "wait for the install to finish"
       # command builds it at RUN time from two variables (`a=MATE`, `b=READY`, printed as `$a$b`), so
       # the echoed command line can never contain the joined word. A typed-but-unrun command
       # therefore cannot satisfy the gate - the trap this file has now fallen into six times.
+      # 93 CHARACTERS, AND THIS IS THE LINE THAT LOST ITS RETURN MOST OFTEN.
+      #
+      # MEASURED across runs 45722812218 and 45741233694: the recording shows this command stopped
+      # mid-word over and over - `clear; [ -f /usr` and `lightdm:defa` are the same damage in two
+      # different steps. A `settle` that ends before the last key arrives sends the Return into the
+      # middle of the line, and the next attempt types over it.
+      #
+      # `type_gap 0.12` IS THE SPEED THE OTHER CONSOLE STEPS USE, and 10 seconds is four more than the
+      # worst case at that speed for a line this long.
       item "ask the disk whether the session file is there yet"
         input text "clear; [ -f /usr/share/xsessions/mate.desktop ] && a=MATE b=READY || a=MATE b=WAIT; echo $a$b"
-        settle 5
+        type_gap 0.12
+        settle 10
       item "press return on its own"
         input ret
         settle 12
