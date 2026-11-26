@@ -913,9 +913,21 @@ step "answer the licence pages until the install proceeds"
 step "wait for the install to finish"
   repeat
     do
+      # THE OUTPUT IS BUILT FROM PIECES SO THE COMMAND LINE DOES NOT CONTAIN IT.
+      #
+      # MEASURED on run 45722812218. The frame at t=6000 says everything:
+      #
+      #	MATE_SESSION_OK                                              <- the LAST result, present
+      #	root@openindiana:~# clear; [ -f /usr/share/xsessions/mate.desktop ] && echo MATE_SE
+      #	SSION_OK || echo MATE_SESSION_WAIT                            <- and the command CONTAINS it
+      #
+      # So the gate could never tell "the answer is on screen" from "the question is on screen", and it
+      # is the fifth time in this file that a gate has matched its own input. `MATE_` and `SESSION_`
+      # and `OK` are echoed separately and joined at RUN time, so the joined word exists ONLY in the
+      # output. A command that was typed but not run cannot produce it.
       item "ask the disk whether the session file is there yet"
-        input text "clear; [ -f /usr/share/xsessions/mate.desktop ] && echo MATE_SESSION_OK || echo MATE_SESSION_WAIT"
-        settle 3
+        input text "clear; [ -f /usr/share/xsessions/mate.desktop ] && a=MATE_ b=SESSION_ c=OK || a=MATE_ b=SESSION_ c=WAIT; echo \"$a$b$c\""
+        settle 5
       item "press return on its own"
         input ret
         settle 12

@@ -43,6 +43,6 @@ jobs:
             "assets": ["iso-openindiana-2026.10-minimal:OI-hipster-minimal-20261030.iso.tar"],
             "out": "openindiana-install.qcow2",
             "publish": "openindiana-install",
-            "timeout": 180
+            "timeout": 240
           }
         ]
