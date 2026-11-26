@@ -40,7 +40,7 @@ jobs:
             "name": "openindiana-install",
             "file": "openindiana/steps/install.walk",
             "pull": "",
-            "assets": ["iso-openindiana-2026.10-minimal:OI-hipster-minimal-20261030.iso.tar"],
+            "assets": ["iso-openindiana-2026.10-gui:OI-hipster-gui-20261030.iso.tar"],
             "out": "openindiana-install.qcow2",
             "publish": "openindiana-install",
             "timeout": 240

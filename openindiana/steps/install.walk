@@ -1,23 +1,43 @@
-# OPENINDIANA 2026.10, THE TEXT INSTALLER, DRIVEN TO AN INSTALLED DISK.
+# OPENINDIANA 2026.10 GUI ISO - ITS OWN GRAPHICAL INSTALLER, MEASURED CLICK BY CLICK.
 #
-# THIS INSTALLER IS A TUI, NOT A GRAPHICAL ONE, AND IT IS DRIVEN THE WAY A PERSON DRIVES IT: F2 is
-# continue, F3 is back, the arrow keys move between fields and list rows, and Space selects a radio
-# row. MEASURED end to end on the pod against OI-hipster-minimal-20261030.iso, 2026-11-23.
+# THIS REPLACES THE MINIMAL-ISO / TEXT-INSTALLER FLOW, FOR TWO REASONS THAT COMPOUND:
 #
-# THE ONE THING THAT IS NOT OBVIOUS IS THAT `ret` DOES NOT MOVE BETWEEN FIELDS ON THE USERS PAGE.
-# MEASURED: `admin` was typed into Root password, `ret` was pressed, and the cursor was still in Root
-# password - the second `admin` landed in the SAME box and the page ended with one field holding ten
-# characters and five empty. `down` is what moves to the next field, so every field below is typed
-# and then stepped away from.
+# 1  THE GUI ISO ALREADY CARRIES THE DESKTOP. MEASURED on the pod, 2026-11-26, on the live desktop:
 #
-# THE RED LINE AT THE BOTTOM IS A HINT, NOT AN ERROR. On the Network page it reads "Select the wired
-# network configuration: Automatically or None." and it stays on screen after Automatically has been
-# selected; waiting for it to disappear would hang. F2 is what moves on, once the radio is chosen.
+#	$ ls /usr/share/xsessions/        mate.desktop  xterm.desktop
+#	$ which mate-session lightdm      /usr/bin/mate-session   /usr/sbin/lightdm
+#	$ pkg list -H | wc -l             1368
 #
-# 1024x768 IS DELIBERATE. The text console renders 80x25 characters at the firmware's font size, and
-# this file's screen reads were measured at this resolution. A 1080p framebuffer would change the
-# glyph size and the rects with it.
-walkthrough "openindiana 2026.10 - the text installer, to an installed desktop"
+#    The minimal ISO (569 MiB) has none of it, so the old flow had to `pkg install mate_install`
+#    from the network after installing - forty minutes when it worked, and the eight-hour sequence of
+#    failures this repository's history records when it did not (the licence prompt, the boot-
+#    environment restart, the scrolled exit line, the OCR that reads SESSION as SESSTON, and lightdm
+#    sitting at `offline` because its greeter was never installed). The GUI ISO (2.47 GiB) needs NO
+#    NETWORK: the installer copies 1368 packages off the medium.
+#
+# 2  THE GRAPHICAL INSTALLER IS SIX PAGES OF CLICKS, WHERE THE TEXT ONE WAS FORTY OF KEYSTROKES.
+#
+#    The text installer is driven by F2/F3 and the arrow keys, and every failure in this stage's
+#    history came from that: a Return sent before the line was read, a `ret` that does not move
+#    between fields, `spc` to tick a checkbox. The graphical one draws a Welcome/Disk/TimeZone/
+#    Locale/Users/Installation/Finish wizard with a Next button in one place on every page and real
+#    text fields, so a step is a `click_at` and a `type`, and there is no timing to lose.
+#
+# MEASURED END TO END on the pod, 2026-11-26: the wizard was driven through all six pages by clicks
+# alone, the transfer wrote 11.2 GiB to the disk, and the resulting disk was converted out and booted
+# with no medium attached, where it came up to lightdm's login screen. That last frame is the proof:
+#
+#	openindiana            (hostname, top bar)
+#	[ username ]  [ Enter your password ]   Cancel    Log In
+#
+# THE WIZARD IS STARTED FROM A TERMINAL, NOT FROM A DESKTOP ICON. The desktop carries
+# `install_openindiana.desktop` with `Exec=/usr/bin/sudo /usr/bin/gui-install`, and double-clicking it
+# was MEASURED not to launch reliably (the icon selected, the wizard did not appear - two clicks 0.3s
+# apart and two 1s apart both failed). The terminal is on the panel at a fixed place, and the command
+# is short, so that is the path taken here.
+#
+# 1024x768 IS DELIBERATE. Every coordinate below was measured at this framebuffer.
+walkthrough "openindiana 2026.10 gui - its live desktop, its graphical installer, an installed desktop"
 resolution 1024x768
 recording_resolution 1024x768
 var disk_gb
@@ -32,7 +52,7 @@ var user
   from args.user
 
 step "the media this stage boots from is already on disk"
-  needs [OI-hipster-minimal-20261030.iso]
+  needs [OI-hipster-gui-20261030.iso]
 
 
 step "create the empty disk"
@@ -41,115 +61,177 @@ step "create the empty disk"
     size "{{ disk_gb }}"
 
 
-step "boot the installer"
+step "boot the live desktop media"
   boot
     machine "q35,accel=kvm,vmport=off"
-    args [["-cpu", "Skylake-Client-v4"], ["-smp", "4"], ["-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd"], ["-drive", "if=pflash,format=raw,file=OVMF_VARS.fd"], ["-m", "4096"], ["-chardev", "socket,id=qga0,path=qga.sock,server=on,wait=off"], ["-device", "isa-serial,chardev=qga0"], ["-device", "VGA,xres=1024,yres=768"], ["-device", "qemu-xhci,id=xhci"], ["-device", "usb-tablet,bus=xhci.0"], ["-device", "usb-kbd,bus=xhci.0"], ["-drive", "file=OI-hipster-minimal-20261030.iso,media=cdrom,readonly=on,if=none,id=media0"], ["-device", "ide-cd,drive=media0,bootindex=0"], ["-drive", "file=disk.qcow2,if=none,format=qcow2,id=target"], ["-device", "virtio-blk-pci,drive=target,bootindex=1"], ["-netdev", "tap,id=net0,ifname=qemutap0,script=no,downscript=no"], ["-device", "virtio-net-pci,netdev=net0,mac=52:54:00:56:4d:01,romfile=,host_mtu=1450"]]
+    args [["-cpu", "Skylake-Client-v4"], ["-smp", "4"], ["-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd"], ["-drive", "if=pflash,format=raw,file=OVMF_VARS.fd"], ["-m", "4096"], ["-chardev", "socket,id=qga0,path=qga.sock,server=on,wait=off"], ["-device", "isa-serial,chardev=qga0"], ["-device", "VGA,xres=1024,yres=768"], ["-device", "qemu-xhci,id=xhci"], ["-device", "usb-tablet,bus=xhci.0"], ["-device", "usb-kbd,bus=xhci.0"], ["-drive", "file=OI-hipster-gui-20261030.iso,media=cdrom,readonly=on,if=none,id=media0"], ["-device", "ide-cd,drive=media0,bootindex=0"], ["-drive", "file=disk.qcow2,if=none,format=qcow2,id=target"], ["-device", "virtio-blk-pci,drive=target,bootindex=1"], ["-netdev", "tap,id=net0,ifname=qemutap0,script=no,downscript=no"], ["-device", "virtio-net-pci,netdev=net0,mac=52:54:00:56:4d:01,romfile=,host_mtu=1450"]]
     timeout 1800
 
 
 # THE LOADER PRINTS ON THE SERIAL LINE, SO THIS WAIT NEEDS NO OCR: GRUB's menu, then "Loading unix...",
-# then "Booting...". MEASURED: boot_archive is loaded by firmware and decompressed by the kernel, and
-# the text installer is on screen about two and a half minutes after "Booting...", which is why the
-# console read is only the first half of the wait and the screen read that follows it is generous.
+# then "Booting...". The live image unpacks to RAM before X comes up, which is why this waits on the
+# console line and the screen read that follows it is generous.
 step "the loader has handed over to the kernel"
   until "Loading unix"
   from console
-  timeout 300
+  timeout 420
 
 
-step "the keyboard question is on screen"
+# THE LANGUAGE QUESTION, WHICH THE MINIMAL MEDIUM NEVER SHOWED. MEASURED: the list is
+#
+#	1, Chinese - Simplified   2, Chinese - Traditional   3, English   4, French   ...
+#
+# and the prompt itself says "default is 3", so a single Return takes English.
+step "the live system asks for a language"
   repeat
     do
       item
-        settle 5
-      item "read the screen"
-        read
-          name kb
-    until
-      bind asking
-      source kb
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      words [[keyboard, layout]]
-    max 60
-
-
-# 47 IS US-ENGLISH IN THIS LIST - "47. US-English" is its last row - and typing it and pressing Return
-# is what the prompt says: "To select the keyboard layout, enter a number [default 47]".
-step "keyboard layout 47, US-English"
-  input text "47"
-  settle 1
-
-
-step "take it"
-  input ret
-  settle 25
-
-
-step "the language question is on screen"
-  repeat
-    do
-      item
-        settle 4
+        settle 10
       item "read the screen"
         read
           name lang
     until
-      bind asking
+      bind up
       source lang
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      words [[English]]
-    max 40
+      scale 1
+      words [[Chinese], [English]]
+    max 60
 
 
-# THE LANGUAGE PAGE'S DEFAULT IS 1 AND ITS ONLY ROW IS "1. English", so Return takes it.
-step "english, the default"
+step "english is the default"
   input ret
-  settle 25
+  settle 40
 
 
-# THE GATE IS `installation menu`, NOT `Install OpenIndiana`, AND THE MEASUREMENT IS THE REASON.
-#
-# MEASURED on run 45665672035: sixty-one consecutive frames read the top line as
-#
-#	Welcome to the UpeniIndiana illumos-cs93fd?sad installation menu
-#
-# - `O` recognised as `U` and `OpenIndiana` as `UpeniIndiana`, on the SAME frame where the run before
-# this one (45646822391) read `Install OpenIndiana` cleanly. The band is small and the glyphs are
-# thin, so that word is not a stable witness; `installation menu` is, because it is longer, lower,
-# and appears in every one of those sixty-one reads.
-#
-# THE MENU IS ALSO EVIDENCE ENOUGH ON ITS OWN: this text exists nowhere else in the installer, and
-# the very next step presses Return on a row that is preselected.
-step "the installation menu is on screen"
+# THE MATE DESKTOP IS THE WITNESS THAT THE LIVE IMAGE IS UP. Its panel draws Applications, Places and
+# System along the top, and the desktop carries the two install launchers.
+step "the live mate desktop is on screen"
   repeat
     do
       item
+        settle 10
+      item "read the screen"
+        read
+          name desktop
+    until
+      bind up
+      source desktop
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[Applications], [Places], [System]]
+    max 90
+
+
+# THE INSTALLER IS STARTED THROUGH `Run Application`, AND THAT IS THE ONLY PATH THAT WAS STABLE.
+#
+# THREE OTHERS WERE MEASURED AND EACH FAILED FOR ITS OWN REASON:
+#
+#	the panel's terminal icon   its x position moves between boots - the panel carries Firefox,
+#	                            Thunderbird and the terminal, and they were at 295 on one boot and 292
+#	                            on the next, so a fixed coordinate misses about half the time.
+#
+#	double-clicking the desktop  THE DESKTOP'S ICONS ARE REORDERED ON EVERY BOOT. MEASURED across
+#	launcher                     three boots: the column was Computer/Home/Live/Install/Trash/Text/
+#	                            Drivers once, and Computer/Home/Live/Drivers/Install/Text the next.
+#	                            A coordinate that lands on `Install OpenIndiana` on one boot lands
+#	                            on `Device Driver Utility` on the next.
+#
+#	a terminal, then typing      works, but only after the same unreliable panel click.
+#
+# `Applications` IS AT A FIXED PLACE because the panel's left end never moves, and its LAST row,
+# `Run Application...`, is a dialog with one text field and a Run button - all at fixed coordinates.
+# MEASURED end to end: the wizard comes up on the first attempt, every time.
+# ONE CLICK IS ENOUGH, AND A PAIR IS WHAT BROKE IT.
+#
+# MEASURED on the pod after watching both behaviours: a single click on `Applications` opens the menu
+# at once. The first version of this step clicked twice per attempt, and that FAILED even though a
+# pair sent by hand appeared to work - because `Click` in the driver does not just press the button,
+# it MOVES the pointer first (it re-establishes the position at a corner, then at the target - see the
+# note in qmp.go). A second click therefore starts by dragging the pointer OUT of the open menu, which
+# closes it, and only then clicks `Applications` again - landing in an unpredictable open/shut state.
+#
+# THE WITNESS IS THE MENU'S OWN LAST ROW. `Run Application` appears nowhere else on this desktop, and
+# the whole 1024x768 frame is read rather than a crop: MEASURED, tesseract on the full frame reads
+# `Run Application` where a 400x380 crop at 3x read the same words with a trailing dot.
+step "open the applications menu"
+  repeat
+    do
+      item "click applications"
+        input 40 12
+        click_at [1024, 768]
         settle 5
       item "read the screen"
         read
           name menu
     until
-      bind shown
+      bind up
       source menu
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      words [[installation, menu]]
-    max 60
+      scale 1
+      words [[Run, Application]]
+    max 12
 
 
-# "1 Install OpenIndiana" is the menu's first row and its default answer.
-step "install openindiana"
-  input ret
-  settle 30
+# `Run Application...` IS THE MENU'S LAST ROW, at (55, 295). MEASURED: the rows are Accessories,
+# Collection, Graphics, Internet, Office, Other, Programming, Sound & Video, System Tools, and then
+# Run Application at the bottom.
+step "choose run application"
+  input 55 295
+  click_at [1024, 768]
+  settle 5
 
 
-step "the welcome page is up"
+step "the run dialog is up"
+  repeat
+    do
+      item
+        settle 3
+      item "read the screen"
+        read
+          name rundlg
+    until
+      bind up
+      source rundlg
+      mode text
+      rect [200, 250, 850, 520]
+      rect_at [1024, 768]
+      scale 1
+      words [[Run, Application], [Cancel], [Run]]
+    max 20
+
+
+# THE FIELD IS THE WIDE BOX UNDER THE GEARS ICON, at (500, 355) in the dialog measured above.
+step "type the installer's path"
+  input 500 355
+  click_at [1024, 768]
+  settle 2
+
+
+step "the command"
+  input text "sudo /usr/bin/gui-install"
+  type_gap 0.06
+  settle 3
+
+
+# `Run` IS THE DIALOG'S LOWER-RIGHT BUTTON, at (645, 465). No `Run in terminal` is needed: the wizard
+# is a GTK application of its own and draws regardless of whether it has a terminal.
+step "run it"
+  input 645 465
+  click_at [1024, 768]
+  settle 20
+
+
+# PAGE 1 - WELCOME. The wizard's title bar reads "OpenIndiana Installer (as superuser)", the left rail
+# lists Welcome / Disk / Time Zone / Locale / Users / Installation / Finish, and Next is the button at
+# the lower right on EVERY page: (895, 708) at 1024x768.
+step "the wizard's welcome page is up"
   repeat
     do
       item
@@ -163,118 +245,57 @@ step "the welcome page is up"
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      words [[F2_Continue], [Thanks, for, choosing]]
-    max 40
+      scale 1
+      words [[Welcome], [Next], [OpenIndiana]]
+    max 60
 
 
-step "continue past the welcome page"
-  input f2
-  settle 15
+step "next, past the welcome page"
+  input 895 708
+  click_at [1024, 768]
+  settle 8
 
 
-step "the disk page is up, with the virtio disk already ticked"
+# PAGE 2 - DISK. It detects "25.0GB Unknown", proposes `Partition the disk` with a Solaris2 partition,
+# and offers `Use the whole disk` as a radio above it. The radio for the whole disk is at (267, 297).
+step "the disk page is up"
   repeat
     do
       item
-        settle 4
+        settle 5
       item "read the screen"
         read
-          name disks
+          name diskpage
     until
       bind up
-      source disks
+      source diskpage
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      words [[Where, should], [Virtio]]
+      scale 1
+      words [[Where, should], [Disk]]
     max 40
 
 
-step "continue with the whole disk"
-  input f2
-  settle 15
+step "use the whole disk"
+  input 267 297
+  click_at [1024, 768]
+  settle 4
 
 
-# THE GPT WARNING PUTS THE CURSOR ON CANCEL, WHICH IS THE SAFE ANSWER AND THE WRONG ONE HERE. `right`
-# moves the selection to Continue and Return takes it. MEASURED: without the `right` the dialog simply
-# closes and nothing is installed.
-step "accept the GPT warning, which starts on Cancel"
-  do
-    item
-      input right
-      settle 1
-    item
-      input ret
-      settle 15
+step "next, with the whole disk chosen"
+  input 895 708
+  click_at [1024, 768]
+  settle 8
 
 
-step "the fdisk page is up"
-  repeat
-    do
-      item
-        settle 4
-      item "read the screen"
-        read
-          name fdisk
-    until
-      bind up
-      source fdisk
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      words [[whole, disk], [fdisk]]
-    max 40
-
-
-# "Use the whole disk (EFI)" IS THE PROPOSED AND PRESELECTED ROW, and it is the one that matches the
-# GPT label the warning above just accepted. Return on it is enough; nothing needs moving.
-step "the whole disk, EFI"
-  input f2
-  settle 20
-
-
-step "the network page is up"
-  repeat
-    do
-      item
-        settle 4
-      item "read the screen"
-        read
-          name net
-    until
-      bind up
-      source net
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      words [[Computer, Name], [wired]]
-    max 40
-
-
-# THE CURSOR STARTS IN THE Computer Name BOX, ONE `down` FROM THE FIRST RADIO ROW. MEASURED: from
-# there, one `down` reaches "Automatically", two reach "Manually", three reach "None", and Space
-# selects whatever the cursor is on. Automatic is right because the daemon runs a DHCP server for the
-# guest - the smoke stage reaches sshd on 172.30.0.2 through exactly this setting.
-step "move to the Automatic row"
-  input down
-  settle 2
-
-
-step "choose automatic configuration"
-  input spc
-  settle 3
-
-
-step "continue, past the red hint line"
-  input f2
-  settle 15
-
-
+# PAGE 3 - TIME ZONE, DATE AND TIME. The region defaults to `GMT/UTC` and the clock is already filled
+# from the firmware, so nothing needs changing: Next takes it.
 step "the time zone page is up"
   repeat
     do
       item
-        settle 4
+        settle 5
       item "read the screen"
         read
           name tz
@@ -284,46 +305,57 @@ step "the time zone page is up"
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      words [[Time, Zone], [UTC/GMT]]
+      scale 1
+      words [[Time, Zone], [Region]]
     max 40
 
 
-# UTC/GMT IS THE FIRST ROW AND THE PRESELECTED ONE, and it is the only honest answer for a machine
-# whose clock is the runner's.
-step "UTC/GMT"
-  input f2
-  settle 12
+step "next, with UTC as it was filled in"
+  input 895 708
+  click_at [1024, 768]
+  settle 8
 
 
-step "the date and time page is up"
+# PAGE 4 - LOCALE. `English` is preselected and the territory is `United States`; both are right.
+step "the locale page is up"
   repeat
     do
       item
-        settle 4
+        settle 5
       item "read the screen"
         read
-          name date
+          name locale
     until
       bind up
-      source date
+      source locale
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      words [[Date, and, Time], [Year], [Hour]]
+      scale 1
+      words [[Locale], [Language]]
     max 40
 
 
-# THE PAGE IS PRELOADED FROM THE FIRMWARE'S CLOCK AND NEEDS NO EDITING.
-step "the clock is already right"
-  input f2
-  settle 15
+step "next, with English as it was filled in"
+  input 895 708
+  click_at [1024, 768]
+  settle 8
 
 
+# PAGE 5 - USERS. SEVEN REAL TEXT FIELDS, and this is where the graphical installer is decisively
+# better than the text one: each is addressed by its own coordinate, so there is no `ret` that fails
+# to move between them and no `down` that overshoots. MEASURED positions at 1024x768:
+#
+#	Root password     (460, 208)        Confirm        (460, 243)
+#	Your real name    (460, 326)
+#	Log-in name       (460, 362)
+#	User password     (460, 397)        Confirm        (460, 432)
+#	Computer name     (460, 468)   <- left at its default `openindiana`
 step "the users page is up"
   repeat
     do
       item
-        settle 4
+        settle 5
       item "read the screen"
         read
           name users
@@ -333,100 +365,74 @@ step "the users page is up"
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      words [[Root, password], [Username]]
+      scale 1
+      words [[Root, password], [Your, real, name]]
     max 40
 
 
-# SIX FIELDS, AND `down` IS WHAT MOVES BETWEEN THEM - NOT Return, which is measured above to leave the
-# cursor where it was. The order on the page is Root password, its Confirm, Your real name, Username,
-# User password, its Confirm; the `down` after the last one lands back on F2's row and does nothing.
-step "type the root password"
-  input text "{{ password }}"
-  type_gap 0.1
+step "root password"
+  input
+    click [460, 208]
+    click_at [1024, 768]
+    text "{{ password }}"
   settle 2
 
 
-step "move down to the root password again"
-  input down
-  settle 1
-
-
-step "type the root password again"
-  input text "{{ password }}"
-  type_gap 0.1
+step "root password again"
+  input
+    click [460, 243]
+    click_at [1024, 768]
+    text "{{ password }}"
   settle 2
 
 
-step "move down to the real name"
-  input down
-  settle 1
-
-
-step "type the real name"
-  input text "{{ user }}"
+step "the user's real name"
+  input
+    click [460, 326]
+    click_at [1024, 768]
+    text "{{ user }}"
   settle 2
 
 
-step "move down to the username"
-  input down
-  settle 1
-
-
-step "type the username"
-  input text "{{ user }}"
+step "the user's log-in name"
+  input
+    click [460, 362]
+    click_at [1024, 768]
+    text "{{ user }}"
   settle 2
 
 
-step "move down to the user's password"
-  input down
-  settle 1
-
-
-step "type the user's password"
-  input text "{{ password }}"
-  type_gap 0.1
+step "the user's password"
+  input
+    click [460, 397]
+    click_at [1024, 768]
+    text "{{ password }}"
   settle 2
 
 
-step "move down to the user's password again"
-  input down
-  settle 1
-
-
-step "type the user's password again"
-  input text "{{ password }}"
-  type_gap 0.1
+step "the user's password again"
+  input
+    click [460, 432]
+    click_at [1024, 768]
+    text "{{ password }}"
   settle 2
 
 
-step "the users page took all six"
+# THE COMPUTER NAME IS ALREADY `openindiana`, which is the name the smoke stage's screen reads and
+# the ssh stage's `ssh_user` target expect, so it is left alone.
+step "next, with the seven fields filled"
+  input 895 708
+  click_at [1024, 768]
+  settle 10
+
+
+# PAGE 6 - INSTALLATION SUMMARY. It lists the disk (`25.0 GB disk (c2t0d0)`), software, UTC, the
+# locale and the user, and its button is `Install` rather than `Next`, in the same place.
+step "the summary is up"
   repeat
     do
       item
-        settle 3
-      item "read the screen"
-        read
-          name filled
-    until
-      bind ok
-      source filled
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      words [["{{ user }}"]]
-    max 20
-
-
-step "continue from the users page"
-  input f2
-  settle 15
-
-
-step "the summary page is up"
-  repeat
-    do
-      item
-        settle 4
+        settle 5
       item "read the screen"
         read
           name summary
@@ -436,722 +442,63 @@ step "the summary page is up"
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
-      words [[Installation, Summary], [F2_Install]]
+      scale 1
+      words [[Installation], [Review, the, settings]]
     max 40
 
 
 step "install"
-  input f2
-  settle 30
-
-
-# THE TRANSFER IS THE LONG PART: MEASURED at roughly 3500 MiB written in about three minutes on the
-# pod, then a minute more for the boot environment to be created. The page's own progress line and
-# the final "Installation Complete" both sit in the same box, so this waits for the words that only
-# the finished page carries.
-step "the transfer finished"
-  repeat
-    do
-      item
-        settle 15
-      item "read the screen"
-        read
-          name done
-    until
-      bind finished
-      source done
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      words [[Installation, Complete], [F8_Reboot]]
-    max 80
-
-
-# THE DESKTOP IS PART OF "INSTALLED", AND THIS IS WHERE IT IS INSTALLED.
-#
-# `Installation Complete` IS A DISK WITH NO DESKTOP ON IT. OpenIndiana's text installer writes a
-# system and stops; `mate_install` is a separate package group and the display manager is a service
-# that has to be enabled, so a disk published straight from that screen boots to a text login and
-# nothing else.
-#
-# EVERY OTHER REPOSITORY HERE INSTALLS ITS DESKTOP IN THIS STAGE. `sd-bsd/freebsd/steps/install.walk`
-# runs `pkg install ... xfce lightdm lightdm-gtk-greeter` from the installer's own root shell, and
-# its ssh stage only turns on remote access. So this stage does the same, and the ssh stage that
-# follows is short because there is nothing left for it to install.
-#
-# THE INSTALLER HAS NO SHELL TO TYPE INTO, which is the one thing that is different: the text
-# installer's last page offers F8 to reboot and nothing else. So the disk is stopped, booted again -
-# this time with no ISO - and the work is done at the installed system's own console.
-#
-# 1024x768 IS KEPT, because it is what this file's installer screens were measured at and what its
-# `-device VGA` asks for. The rects below are the ssh stage's, narrowed to this framebuffer.
-step "power the installer's machine off, because the next boot describes another one"
-  stop kill
-  timeout 120
-
-
-step "boot the installed system, with no installer media attached"
-  boot
-    machine "q35,accel=kvm,vmport=off"
-    args [["-cpu", "Skylake-Client-v4"], ["-smp", "4"], ["-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd"], ["-drive", "if=pflash,format=raw,file=OVMF_VARS.fd"], ["-m", "4096"], ["-chardev", "socket,id=qga0,path=qga.sock,server=on,wait=off"], ["-device", "isa-serial,chardev=qga0"], ["-device", "VGA,xres=1024,yres=768"], ["-device", "qemu-xhci,id=xhci"], ["-device", "usb-tablet,bus=xhci.0"], ["-device", "usb-kbd,bus=xhci.0"], ["-drive", "file=disk.qcow2,if=none,format=qcow2,discard=unmap,id=target"], ["-device", "virtio-blk-pci,drive=target,bootindex=0"], ["-netdev", "tap,id=net0,ifname=qemutap0,script=no,downscript=no"], ["-device", "virtio-net-pci,netdev=net0,mac=52:54:00:56:4d:01,romfile=,host_mtu=1450"]]
-    timeout 900
-
-
-# THE INSTALLED SYSTEM'S BOOT MENU COMES UP FIRST, AND IT WAITS FOR A RETURN.
-#
-# MEASURED on run 45667527362: the frame the wait kept reading was
-#
-#	1. Boot Multi User [Enter]  2. Boot Single User  3. Escape to loader prompt  4. Reboot
-#
-# - the illumos loader's own menu, which does not count down. The step that types the account name
-# was pressed against this menu, every keystroke was eaten as a menu choice, the login never
-# happened, `pkg install` never ran, and the run spent fifty minutes waiting for a PKG_EXIT line
-# that could not appear. It is the same failure 45646822391 hit one menu earlier, at GRUB.
-#
-# SO THE RETURN IS INSIDE THE WAIT, the same shape the tribblix install uses: a Return on this menu
-# takes its preselected first row ("Boot Multi User"), and a Return at a login prompt merely redraws
-# the prompt. The retry cannot overshoot, and the prompt is still the witness.
-step "the installed system has reached its login"
-  repeat
-    do
-      item
-        settle 10
-      item "boot the default entry, or redraw a prompt that is already up"
-        input ret
-      item "read the screen"
-        read
-          name login
-    until
-      bind up
-      source login
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      scale 1
-      # ONE WORD PER ELEMENT, NOT ONE STRING WITH A COMMA IN IT. `[["console, login"]]` asks the reader
-      # for a single word `console, login` - punctuation and all - which no screen has ever shown. The
-      # wait then ran its whole sixty attempts and the stage died at the login it was waiting for.
-      # MEASURED on run 45665672035: step 46 burned twenty-five minutes and every reading was a miss.
-      words [[console, login]]
-    max 60
-
-
-step "log in at the console as the account that exists"
-  input text "{{ user }}"
-  type_gap 0.1
-  settle 2
-
-
-step "take the login name"
-  input ret
-  settle 6
-
-
-step "type the account password"
-  input text "{{ password }}"
-  type_gap 0.1
-  settle 2
-
-
-step "take the password"
-  input ret
-  settle 10
-
-
-step "read what the console says after logging in"
-  read
-    name after_login
-
-
-# THE PROMPT ITSELF, NOT A `$`. A bare dollar sign is a glyph OCR reads as `S`, `s` or nothing, and
-# a check that cannot see it would fail on a login that worked. `vmuser@openindiana` is the shell's
-# own name for the account, which is what a successful login actually prints.
-step "the console is a shell, not a refusal"
-  check
-    source after_login
-    mode text
-    rect [0, 0, 1024, 768]
-    rect_at [1024, 768]
-    words [["vmuser@openindiana"]]
-    without [incorrect, "Permission denied"]
-    name console_shell
-
-
-step "assume the root role"
-  input text "su -"
-  type_gap 0.1
-  settle 2
-
-
-step "send the role request"
-  input ret
-  settle 6
-
-
-step "type the root role password"
-  input text "{{ password }}"
-  type_gap 0.1
-  settle 2
-
-
-step "take the role password"
-  input ret
-  settle 10
-
-
-step "read what the console says after su"
-  read
-    name after_su
-
-
-# THE PROOF IS THE LINE `su` ITSELF PRINTS, WHICH THE 7f0459b CONSOLE SHOWS VERBATIM:
-#
-#	Nov 25 13:09:33 openindiana su: 'su root' succeeded for vmuser on /dev/console
-#	root@openindiana:~#
-#
-# `root@` IS THE SHELL'S OWN PROMPT for the assumed identity, which is a fact about the session
-# rather than about the word "root" appearing somewhere on the screen - the mistake the 368f6db run's
-# check made when it matched the login prompt's own text.
-step "the root role was assumed"
-  check
-    source after_su
-    mode text
-    rect [0, 0, 1024, 768]
-    rect_at [1024, 768]
-    without [incorrect, "Permission denied", "can only be assumed", "not a valid"]
-    words [["root@openindiana"]]
-    name role_assumed
-
-
-# THE AUTHORIZATION IS GRANTED IN THE CONSOLE'S ROLE AND PROVEN OVER SSH.
-#
-# Both halves are needed: `usermod` must run with privilege, which only the assumed role has, and the
-# result must be visible to a NEW ssh session, which is where `pkg` runs. Doing the grant over the
-# console and the proof over ssh also keeps the two independent - a session that inherited the
-# authorization could not be evidence that it was granted.
-# THE GRANT IS A PROFILE, NOT AN AUTHORIZATION NAME, AND THE CONSOLE SAID SO IN ONE LINE.
-#
-# MEASURED on the 7f0459b run, in the assumed root shell:
-#
-#	root@openindiana:~# usermod -A +solaris.admin.packager vmuser
-#	UX: usermod: ERROR: +solaris.admin.packager is not a valid authorization.  Choose another.
-#
-# `-A` takes a name from `/etc/security/auth_attr`; `solaris.admin.packager` is the AUTHORIZATION a
-# package operation checks, but it is not itself declared as a login authorization. What `pkg`
-# really wants is the PROFILE that carries it, and illumos names that one `Solaris Package Manager`.
-#
-# `-P +"Solaris Package Manager"` APPENDS the profile and leaves the ones the installer already set
-# alone - the same `+` semantics `-A` has, on the other list.
-#
-# THE NAME IS PRINTED FROM THIS SYSTEM RATHER THAN ONLY TRUSTED. If the profile were called something
-# else, the line before the grant would show it, and `usermod` would name the replacement - which is
-# exactly how the run above got from a wrong authorization name to this one.
-# THIS SYSTEM HAS NO PACKAGE PROFILE TO GRANT, AND THE CONSOLE SAID SO IN TWO LINES.
-#
-# MEASURED on the 49e152e run, in the assumed root shell:
-#
-#	root@openindiana:~# grep -i package /etc/security/prof_attr
-#	root@openindiana:~#                                   <- NO OUTPUT
-#	root@openindiana:~# usermod -P +'Solaris Package Manager' vmuser
-#	UX: usermod: ERROR: +Solaris Package Manager is not a valid profile name.  Choose another.
-#
-# AND `profiles` FOR THE ACCOUNT DID NOT GAIN IT EITHER:
-#
-#	Console User, Suspend To RAM, Suspend To Disk, Brightness, CPU Power Management,
-#	Network Autoconf User, Basic Solaris User, All
-#
-# `Solaris Package Manager` IS A SOLARIS 11 PROFILE AND THIS IS NOT SOLARIS 11. OpenIndiana Hipster
-# ships IPS without a profile named for it, so there is nothing to grant and no authorization name to
-# append - the two previous attempts failed on exactly that, from opposite directions.
-#
-# SO THE PACKAGE OPERATION RUNS IN THE ROOT SHELL, WHICH IS THE ONE PLACE ON THIS SYSTEM IT IS
-# PROVEN TO WORK. `su -` already succeeded and the prompt is `root@openindiana:~#`. Running `pkg`
-# there is not a workaround - it is the privileged context this disk actually has.
-#
-# THE RISK IS THE RECORDING, NOT THE COMMAND: a 90-minute `pkg` run holds the console, so the step's
-# own output is the only thing the log will show. That is acceptable here because `pkg` writes its
-# progress to the terminal this step is typing into.
-#
-# AND THE PROOF MOVES TO WHERE IT BELONGS: `pkg` EXITS NON-ZERO IF IT COULD NOT INSTALL, and the
-# desktop's own session file is then checked over ssh - which is a fact about the system rather than
-# about a name in an authorization list.
-#
-# `mate_install` AND `lightdm`, NOT `solaris-desktop` AND `gdm`, AND THREE RUNS ARE WHAT SAID SO.
-# OpenIndiana's own handbook, under "Installing OpenIndiana", gives the two commands this stage
-# needs:
-#
-#	pkg install mate_install
-#	svcadm enable -r /application/graphical-login/lightdm
-#
-# MATE IS THIS DISTRIBUTION'S DEFAULT DESKTOP; `solaris-desktop` is a Solaris 11 group with no
-# equivalent here, and `gdm` is not the display manager it ships. MEASURED: three runs installed
-# `solaris-desktop` successfully - `pkg` returned 0 - and `/usr/share/xsessions/gnome.desktop` was
-# still absent afterwards, because nothing had been installed under that name at all.
-#
-# `yes |` AND A LOG FILE, BECAUSE `pkg` ASKS A QUESTION THE CONSOLE CANNOT SEE THE END OF.
-#
-# MEASURED on run 45630040587, which waited properly and then read `PKG_EXIT=1`: the screen held an
-# entire licence agreement - `LOSS OF GOODWILL, WORK STOPPAGE...`, `OR CONSEQUENTIAL DAMAGES` - so
-# `pkg` had stopped to ask whether the terms were accepted and refused on its own timeout. The console
-# is a screen this walk types at, not a terminal a person scrolls, so a prompt hundreds of lines down
-# cannot be answered there.
-#
-# `yes` ANSWERS IT, and `--accept` still carries "do not ask me to confirm the install". Redirection to
-# a file keeps that agreement out of the recording, and `tail -5` puts the part that matters - the last
-# five lines of the real outcome - back on the console where the exit line is read from.
-# `-r` ON THE ENABLE IS NOT OPTIONAL: it restarts the service and the ones that depend on it, which is
-# what makes lightdm actually come up rather than record that it should.
-# `--licenses` IS WHAT PRINTED THE LICENCE, AND `--accept` IS ALL THE INSTALL NEEDS.
-#
-# THE MAN PAGE SETTLES IT (pkg(1), illumos and OmniOS - both documented from the same source):
-#
-#	--accept   Indicate that you agree to and accept the terms of the licenses of the packages
-#	           that are updated or installed. If you do not provide this option, and any package
-#	           licenses require acceptance, the installation operation fails.
-#
-#	--licenses Display all of the licences for the packages that are installed or updated as part
-#	           of this operation.
-#
-# SO `--accept --licenses` ACCEPTS THE LICENCE AND THEN PRINTS EVERY LINE OF IT TO THE CONSOLE. That
-# is the wall of CDDL text every failing run of this stage sat on - 379 words of "This U.S.
-# Government Rights clause is in lieu of ..." - and `PKG_EXIT` was never printed because `pkg` was
-# still writing the licence out, not because it was waiting for an answer.
-#
-# MEASURED on run 45681423101: forty minutes of licence body in the frame, the exit line never
-# written, `mate_install` never installed.
-#
-# `--licenses` was added on the theory that `pkg` was PROMPTING for a licence. It never prompts: it
-# fails when `--accept` is absent (the man page says so above), and `--licenses` is a display flag.
-# Removing it is the fix, and `--accept` alone is the non-interactive form.
-#
-# `yes | pkg install` DOES NOT ANSWER THE LICENCE PROMPT, AND THE RECORDING SAYS WHY.
-#
-# MEASURED on run 45681423101, whose console held nothing but licence text for forty minutes:
-#
-#	herein. This U.S. Government Rights clause is in lieu of, and supersedes, any other FAR, DFAR,
-#	or other clause or provision that addresses Government rights in computer software ...
-#	--- NOTICE PURSUANT TO SECTION 9 OF THE COMMON DEVELOPMENT AND DISTRIBUTION LICENSE (CDDL)
-#	root@openindiana:~#
-#
-# `pkg` READS ITS CONFIRMATION FROM THE TERMINAL, NOT FROM STDIN. A pipe answers stdin, so `yes |`
-# fed a question that was never read from there, and the command sat waiting with its prompt drawn on
-# the screen this walk is supposed to watch.
-#
-# SO THE COMMAND RUNS IN THE FOREGROUND AND THE PROMPT IS ANSWERED FROM THE CONSOLE. `y` then Return
-# is what a person types at that prompt, and the loop below is built to keep answering until the
-# licence page is gone rather than assuming one `y` is enough - some images ask once per publisher.
-# THE COMMAND IS WRITTEN TO A SCRIPT AND RUN, BECAUSE A 107-CHARACTER LINE LOSES ITS RETURN.
-#
-# MEASURED on run 45713558013, whose last frame shows BOTH commands still sitting at the prompt with
-# the cursor at the end of the second one - neither had run:
-#
-#	root@openindiana:~# pkg install --accept --deny-new-be mate_install > /tmp/pkg.log 2>&1; echo ...
-#	clear; [ -f /usr/share/xsessions/mate.desktop ] && echo MATE_SESSION_OK || echo MATE_SESSION_WAIT
-#
-# Typing is one action and Return is another, and on this console a long line typed at speed can still
-# be arriving when the Return is sent. A SIX-WORD SCRIPT NAME does not have that problem, and the
-# script itself can be as long as it likes.
-# `pkg` RUNS IN THE BACKGROUND, BECAUSE A FOREGROUND INSTALL TAKES THE SHELL FOR FORTY MINUTES.
-#
-# MEASURED on run 45718833057, whose last frame is the whole story:
-#
-#	root@openindiana:~# sh /tmp/as.sh
-#	svcadm enable -r svc:/application/graphical-login/lightdm:default; echo DM_EXIT=$?
-#	clear; svcs -H -o fmri,state svc:/application/graphical-login/lightdm:default
-#	clear; svcs -H -o fmri,state svc:/application/graphical-login/lightdm:default
-#	... eight more, and not one of them produced a line of output
-#
-# `sh /tmp/as.sh` WAS STILL RUNNING `pkg install` IN THE FOREGROUND. The shell was blocked for the
-# whole install, so every later keystroke went into a terminal nothing was reading - `clear` could not
-# clear and `svcs` could not answer, and the loop typed its question thirty times at a prompt that was
-# not there to take it.
-#
-# `( ... ) &` PUTS THE WHOLE THING IN A SUBSHELL THAT RETURNS AT ONCE, and the exit status lands in
-# the file when it finishes. The shell is free from the first second, and the status is still recorded.
-# THE INSTALL IS ONE SHORT BACKGROUND COMMAND, NOT A WRITTEN SCRIPT, AND THE MEASUREMENT IS WHY.
-#
-# MEASURED on run 45718833057: the screen froze showing the `printf` line that was meant to WRITE the
-# script, with the cursor at its end and nothing executed - so `sh /tmp/as.sh` never ran, `pkg` never
-# started, and the display-manager gate waited on a machine that had done nothing. That line was 120
-# characters with nested quotes and a backslash, and this console loses keystrokes and Returns on
-# lines that long: the same failure that made the 107-character pkg line sit unexecuted on
-# 45713558013.
-#
-# SO THERE IS NO SCRIPT. The command is the install itself, in the background, and it is 64
-# characters with no quoting at all:
-#
-#	pkg install --accept --deny-new-be mate_install > /tmp/pkg.log 2>&1 &
-#
-# THE TRAILING `&` IS NOT COSMETIC: a foreground `pkg` takes the shell for forty minutes, so no later
-# step could type into it. Backgrounded, the prompt comes straight back and the gates below poll for
-# the result.
-#
-# THE EXIT STATUS IS NOT WRITTEN BY THIS LINE - a backgrounded command's `$?` is the `&`'s. The gate
-# is the DESKTOP FILE, asked directly, which is the fact this whole stage is for.
-# 69 CHARACTERS AT 0.08s IS 5.5 SECONDS OF TYPING UNDER A 5-SECOND SETTLE - it failed once already.
-step "start the install in the background"
-  # THE PACKAGE SET IS THE ONE OpenIndiana's OWN HANDBOOK GIVES, AND NOTHING ELSE:
-  #
-  #	docs.openindiana.org/handbook/getting-started/:
-  #		pkg install mate_install
-  #		svcadm enable -r /application/graphical-login/lightdm
-  #
-  # A GUESSED PACKAGE NAME WOULD FAIL THE WHOLE COMMAND. `pkg install A B C` with one name that does
-  # not exist installs NOTHING - so adding `lightdm-gtk-greeter` on the theory that a missing greeter
-  # explains `offline` would have thrown away the `mate_install` that four runs proved works. The
-  # handbook names two things and this line names two things.
-  #
-  # `lightdm` IS NAMED SEPARATELY because the discussion list says so ("Try installing mate_install
-  # and lightdm"), and because its FMRI existed while its state was `offline` - enabled, started,
-  # failed - which is a package that is present and a greeter that is not.
-  #
-  # 62 CHARACTERS AT 0.12s IS 7.5 SECONDS, so the settle is 12.
-  input text "pkg install --accept --deny-new-be mate_install lightdm > /tmp/pkg.log 2>&1 &"
-  type_gap 0.12
-  settle 12
-
-
-step "run the install"
-  input ret
+  input 895 708
+  click_at [1024, 768]
   settle 20
 
 
-# THE LICENCE PAGE, ANSWERED UNTIL IT IS GONE. `PKG_EXIT` CANNOT APPEAR WHILE A PROMPT IS WAITING, so
-# this loop runs BEFORE the exit line is waited for: it types `y` whenever the screen shows the
-# licence, and it ends when the licence text is no longer there.
-step "answer the licence pages until the install proceeds"
+# THE TRANSFER IS WAITED ON UNTIL THE WIZARD ITSELF SAYS `Finished`, AND THE SCREENSAVER IS UNLOCKED.
+#
+# TWO MEASUREMENTS DECIDE THIS SHAPE, AND EACH COST A RUN:
+#
+# 1  A FIXED `settle` IS EITHER TOO SHORT OR A GUESS. The transfer copies 1368 packages and measured
+#    11.2 to 12.7 GiB across runs, taking twelve to twenty-two minutes. A `settle 600` published a
+#    disk whose `/platform/i86pc/amd64` was EMPTY - the wizard was still writing when the machine was
+#    killed - and that disk answered the loader's `No rootfs module provided, aborting`.
+#
+# 2  THE MATE SCREENSAVER LOCKS AFTER TEN MINUTES AND PAINTS THE SCREEN BLACK. MEASURED: a frame that
+#    looked like a dead machine was the lock dialog, `Default User / jack on openindiana`, with the
+#    install still progressing behind it. A gate that reads the screen therefore has to UNLOCK first,
+#    or it reads a password box forever.
+#
+# SO THE LOOP BELOW TYPES `jack` AND RETURN WHEN THE LOCK IS UP, WHICH IS A NO-OP WHEN IT IS NOT, AND
+# LOOKS FOR THE WIZARD'S OWN LAST PAGE: `Finished` with "OpenIndiana installation is complete". That
+# sentence appears once, at the end, and is the wizard's statement rather than an inference.
+step "the install finishes"
   repeat
     do
-      item "read the screen"
+      item "unlock the screensaver if it came up"
+        input text "{{ user }}"
+        settle 3
+      item "press return, which is the unlock when the lock is up"
+        input ret
+        settle 3
+      item "ask the screen whether the wizard is finished"
         read
-          name lic
-      item "is a licence page up"
+          name done
+      item "is the wizard's Finished page up"
         check
-          source lic
+          source done
           mode text
-          name licensed
+          name finished
           rect [0, 0, 1024, 768]
           rect_at [1024, 768]
-          words [[CDDL], [PUBLIC, LICENSE], [Government, Rights], [GOVERNMENT, RIGHTS]]
-      item "say yes whenever the licence is on screen"
-        if licensed
-          then
-            item
-              input text "y"
-            item
-              input ret
-              settle 8
-      item
-        settle 5
+          words [[installation, is, complete]]
+      item "leave it alone while it copies"
+        settle 25
     until
-      bind proceeded
-      source lic
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      without [CDDL, "PURSUANT TO SECTION 9", "Government Rights", "GOVERNMENT RIGHTS"]
-    max 40
+      finished
+    max 90
 
 
-# THE EXIT LINE IS ALSO WRITTEN TO A FILE, BECAUSE THE CONSOLE SCROLLS IT AWAY.
-#
-# MEASURED on run 45694800660, and this is the failure `--accept` alone did not fix: the licence loop
-# DID see the line - its own log reads
-#
-#	answer the licence pages until the install proceeds [until]: __until__ = true (read "PKG_EXIT")
-#
-# and the disk that run published was 19 GB with `mate_install` on it. The stage failed anyway,
-# because `pkg`'s own post-install work prints SMF defects to the same console:
-#
-#	SUNW-MSG-ID: SMF-8000-YX, TYPE: defect, VER: 1, SEVERITY: major
-#
-# and by the time the step after the loop read the screen, the exit line had been pushed off it. The
-# install SUCCEEDED and the walk could not see it.
-#
-# SO THE COMMAND RECORDS ITS STATUS IN /tmp/pkg.exit AS WELL, and a step of its own `cat`s it. A
-# three-word line does not scroll away, and `PKG_EXIT` is still the gate because this console's reader
-# cannot tell `0` from `O` (see the note below).
-# `--deny-new-be` IS WHAT KEEPS THE MACHINE ON THE CONSOLE INSTEAD OF REBOOTING OUT OF IT.
-#
-# MEASURED on run 45707724998: the licence loop was still waiting when the screen turned into the
-# BOOT SEQUENCE of the same machine -
-#
-#	Loading unix... Loading /platform/i86pc/amd64/boot_archive...
-#	Booting... OpenIndiana Hipster 2026.10 Version ...
-#
-# `pkg install` on OpenIndiana creates a new boot environment by default and activates it, and the
-# SMF actuators that follow a large install restart the system. A restart destroys the console this
-# walk drives: `/tmp` is memory, so `/tmp/pkg.exit` goes with the shell that wrote it, and every
-# keystroke after that lands on a login prompt nobody asked for. It is also why reading the file did
-# not help on that run even though the file had been written.
-#
-# `--deny-new-be` tells pkg not to create the boot environment (pkg(1): "Do not create a new boot
-# environment. This operation will fail if this option is specified and the operation requires a new
-# boot environment."). `mate_install` is an ordinary package set and does not require one, so the
-# packages land in the running BE and nothing reboots.
-#
-# `cat` IS INSIDE THE LOOP, BECAUSE THE FILE APPEARS WHEN `pkg` FINISHES AND NOT BEFORE.
-#
-# MEASURED on runs 45694800660 and 45707724998: `pkg install mate_install` takes forty to fifty
-# minutes, and its output SCROLLS - the console was still showing boot text when the licence loop gave
-# up, so nothing that reads the screen can tell "still installing" from "finished".
-#
-# `/tmp/pkg.exit` is written by the command itself (`| tee /tmp/pkg.exit`) and holds three words. It is
-# the only record that survives the scroll, and a `cat` that runs before the file exists simply prints
-# an error - so the cat is repeated rather than assumed.
-# THE GATE IS THE DESKTOP FILE ITSELF, NOT `pkg`'S EXIT CODE.
-#
-# MEASURED on run 45711557879. `PKG_EXIT` WAS MATCHED ON THE FIRST ATTEMPT while the console still
-# read `Loading unix... Booting...` - the word came from somewhere in the boot text, not from the
-# install, and the stage then failed at `ls /usr/share/xsessions/mate.desktop: No such file or
-# directory`. A gate that a four-letter token in a boot log can satisfy is not a gate.
-#
-# `MATE_SESSION_OK` IS A WORD THIS CONSOLE CANNOT PRODUCE BY ACCIDENT. It is printed only when
-# `/usr/share/xsessions/mate.desktop` exists, which is the thing `pkg install mate_install` is FOR -
-# so the loop waits for the outcome rather than for a status line about it, and it can be asked again
-# every ten seconds for as long as the install takes.
-# `PKG_EXIT` IS SAFE TO GATE ON NOW, BECAUSE THE COMMAND LINE NO LONGER CONTAINS IT.
-#
-# MEASURED on run 45713558013, whose last frame showed BOTH commands sitting at the prompt with
-# nothing executed - the returns were eaten - and `MATE_SESSION_OK` matched on the TEXT OF THE COMMAND
-# rather than on any result. That is the third time a gate in this file has matched its own input.
-#
-# THE INSTALL NOW RUNS AS `sh /tmp/as.sh`, a six-word line that cannot lose its Return, and the script
-# prints `PKG_EXIT` when `pkg` finishes. So the word appears EXACTLY ONCE, in the OUTPUT, and nowhere
-# in the command this console echoes back.
-#
-# AND THE PROOF THAT FOLLOWS IS THE DISK, NOT THE WORD: the step after this asks the published system
-# over ssh whether `mate.desktop` exists.
-# THE STATUS IS READ FROM THE FILE, BECAUSE THE BACKGROUND INSTALL PRINTS NOTHING TO THE CONSOLE.
-#
-# The subshell writes `PKG_EXIT=<code>` into `/tmp/pkg.exit` and nothing else appears on screen for the
-# forty minutes it runs. `cat` before the file exists prints an error and costs eight seconds; `cat`
-# after it exists prints the answer. The loop asks again rather than assuming either.
-step "wait for the install to finish"
-  repeat
-    do
-      # THE WORD HAS NO `I` IN IT, AND THAT IS THE WHOLE FIX - THE INSTALL WAS ALREADY SUCCEEDING.
-      #
-      # MEASURED on run 45722812218, whose 8592-frame recording ends with `pkg` FINISHED. Its
-      # daemon.log counts every reading of this loop:
-      #
-      #	185  MATE_SESSTON_OK     <- the file WAS there, for 185 consecutive readings
-      #	 48  MATE_SESSTON_WATT   <- and was not, for the first 48
-      #
-      # The first `OK` is reading 592 and the last `WATT` is 587 - so `pkg` finished inside the first
-      # minute of the loop, and the stage spent the next hundred minutes failing to SEE it. Tesseract
-      # reads `SESSION` as `SESSTON`: `I` and `T` are one pixel apart at this console's font, and `--psm 6`
-      # takes the taller stem. The same log shows `Installation`, `Installing` and `OpenIndiana` all
-      # read correctly, so the `I` is only ambiguous inside THIS word - the underscore run above it
-      # shortens the serif.
-      #
-      # SO THE ANSWER IS `MATEREADY` - NO `I`, AND NO UNDERSCORE BETWEEN LETTERS, because the run
-      # of underscores above the word is what shortened the `I`'s serif in the first place. The
-      # command builds it at RUN time from two variables (`a=MATE`, `b=READY`, printed as `$a$b`), so
-      # the echoed command line can never contain the joined word. A typed-but-unrun command
-      # therefore cannot satisfy the gate - the trap this file has now fallen into six times.
-      # 93 CHARACTERS, AND THIS IS THE LINE THAT LOST ITS RETURN MOST OFTEN.
-      #
-      # MEASURED across runs 45722812218 and 45741233694: the recording shows this command stopped
-      # mid-word over and over - `clear; [ -f /usr` and `lightdm:defa` are the same damage in two
-      # different steps. A `settle` that ends before the last key arrives sends the Return into the
-      # middle of the line, and the next attempt types over it.
-      #
-      # `type_gap 0.12` IS THE SPEED THE OTHER CONSOLE STEPS USE, and 10 seconds is four more than the
-      # worst case at that speed for a line this long.
-      item "ask the disk whether the session file is there yet"
-        input text "clear; [ -f /usr/share/xsessions/mate.desktop ] && a=MATE b=READY || a=MATE b=WAIT; echo $a$b"
-        type_gap 0.12
-        settle 10
-      item "press return on its own"
-        input ret
-        settle 12
-      item "read the screen"
-        read
-          name after_pkg
-    until
-      bind done
-      source after_pkg
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      words [[MATEREADY]]
-    max 300
-
-
-# THE COMMAND IS TYPED SLOWER AND THE RETURN WAITS LONGER, BECAUSE 78 CHARACTERS AT 0.05s PER KEY
-# ARRIVE SLOWER THAN A THREE-SECOND SETTLE.
-#
-# MEASURED on run 45741233694, whose last frame shows the command stopped mid-word with the cursor at
-# the end of it:
-#
-#	root@openindiana:~# clear; svcs -H -o fmri,state svc:/application/graphical-login/l
-#	lightdm:defa                                                       <- the enable never ran
-#
-# and the service it never enabled answered `disabled` for the whole forty attempts of the gate below
-# - which is the CORRECT answer to a command that was typed and not executed. THIS IS THE SAME DEFECT
-# AS `pkg install`: typing and Return are two actions, and a long line is still arriving when the
-# Return is sent.
-#
-# 0.12s PER KEY IS THE TYPE GAP THE OTHER CONSOLE STEPS USE, and the settle is 8 - four seconds of
-# margin over the worst case at that speed, which is what makes the Return land after the last key.
-# THE ENABLE IS ISSUED AS ITS OWN SHORT LINE, AND THE MEASUREMENT IS THE `disabled` THAT FOLLOWED.
-#
-# MEASURED on run 45741233694: the run reached this step and the frame after it read
-#
-#	svc:/application/graphical-login/lightdm:default disabled
-#
-# - the service name is right and the state is `disabled`, so `svcadm enable` did not run. The line
-# that was supposed to run it is 88 characters with `-r`, a colon, two slashes and a `;` - and this
-# console has already been measured losing Returns on lines of that length (the 107-character pkg
-# line, the 120-character printf line). The trailing `; echo DM_EXIT=$?` made it longer still, and
-# there is no DM_EXIT in the log at all.
-#
-# SO THE COMMAND IS SPLIT: `svcadm enable` with its target on ONE short line (60 characters, and
-# `enable` alone is enough - `-r` only restarts dependants, which a freshly-installed service has
-# none of), and the state is read in the gate below where it belongs.
-# THE ENABLE IS RETRIED UNTIL THE SERVICE IS ONLINE, BECAUSE `pkg` REGISTERS IT LATE.
-#
-# MEASURED on run 45747148592, frame by frame from its own recording:
-#
-#	t=2560  svcs: Pattern 'svc:/application/graphical-login/lightdm:default' doesn't match any
-#	        instances                                  <- the service does not EXIST yet
-#	t=2580  Loading smf(7) service descriptions: 26    <- SMF is still importing manifests
-#	t=2650  [1]+ Done pkg install --accept ...         <- the backgrounded pkg only NOW reports done
-#	t=2700  svc:/application/graphical-login/lightdm:default disabled
-#
-# So `pkg`'s post-install actuators import the new manifests into SMF AFTER the package's own
-# `/tmp/pkg.exit` and even after the `MATEREADY` gate - the desktop file lands first, the service
-# second. A single `svcadm enable` sent in that window either finds nothing to enable or is answered
-# by a service that SMF is still registering, and the `disabled` this stage kept reading is the
-# result of that race rather than of a missing command.
-#
-# SO THE ENABLE AND THE QUESTION ARE ONE LOOP: enable, ask, and enable again while the answer is not
-# `online`. `svcadm enable` on an already-online service is a no-op, so the retry cannot hurt.
-# `svcs ... || svcadm enable ...` WAS THE FIRST SHAPE OF THIS LOOP AND IT CANNOT WORK, because
-# `svcs` SUCCEEDS WHENEVER IT MATCHES THE FMRI - a service that exists and is `disabled` exits 0 and
-# prints `disabled`. So the enable on the right of `||` ran ONLY when the service did not exist yet,
-# which is the one case where `svcadm` could do nothing anyway. The `disabled` this run kept reading
-# would have survived the loop unchanged.
-#
-# ENABLE FIRST, THEN ASK, EVERY ATTEMPT: `svcadm enable` on an online service is a no-op, so the
-# retry is harmless, and there is now no ordering in which the enable is skipped.
-#
-# BOTH LINES ARE SHORT ENOUGH TO TYPE AT 0.12s, and each has its own Return - measured in this very
-# run: the 54-character enable and the 77-character query both arrived whole.
-step "enable the display manager, retried until it is online"
-  repeat
-    do
-      # `-r` IS THE FIX, AND IT WAS REMOVED ON A READING OF THE MAN PAGE THAT HAD IT BACKWARDS.
-      #
-      # MEASURED on run 45753704107, after the enable-then-ask loop was already in place: every one of
-      # the forty attempts read `offline`, never `disabled` and never `online`. `disabled` means "not
-      # enabled"; `offline` means "ENABLED, AND THE START FAILED" - so the command was running and
-      # lightdm could not come up.
-      #
-      # illumos svcadm(1M): `-r   When enabling a service, also enable the services that it DEPENDS
-      # ON.` It is not "restart the dependants" - a previous commit removed `-r` on exactly that
-      # misreading, with the note "a freshly-installed service has none of". lightdm depends on dbus
-      # and consolekit; with `-r` absent they are never brought up, and lightdm sits at `offline`
-      # forever. The distribution's own handbook gives the command WITH `-r`.
-      #
-      # `svcadm clear` FIRST, because an attempt that failed hard leaves the instance in maintenance
-      # and `enable` is then a no-op.
-      # `svcadm clear` ON AN `offline` INSTANCE EXITS NON-ZERO - svcadm(8) documents clear as acting
-      # on `maintenance` and `degraded` only. That message would then sit on the screen and be read
-      # by the gate below, so it is made quiet: the exit status is not the point, the state after the
-      # enable is.
-      item "clear any failed state"
-        input text "svcadm clear svc:/application/graphical-login/lightdm 2>/dev/null || true"
-        type_gap 0.12
-        settle 4
-      item "press return on the clear"
-        input ret
-        settle 4
-      # `-rs`: -r enables the dependencies RECURSIVELY (svcadm(8) Example 3: "enables the foo:bar
-      # instance, and all instances on which it depends") and -s makes svcadm WAIT until the instance
-      # is online or degraded, returning early if it decides that cannot happen. Without -s the
-      # command returns the moment the request is accepted, which reads as `offline` at the next
-      # prompt even when the start is still in progress.
-      item "enable it and everything it depends on, and wait"
-        input text "svcadm enable -rs svc:/application/graphical-login/lightdm"
-        type_gap 0.12
-        settle 20
-      item "press return on the enable"
-        input ret
-        settle 8
-      # `svcs -x` IS THE COMMAND THAT ANSWERS "WHY IS IT NOT ONLINE", and it is what this loop has
-      # been missing for three runs. svcs(1): "-x  Explain the state of the service: list the
-      # reasons it is not online, and the log file to read." Every previous attempt read one word -
-      # `disabled`, then `offline` - and guessed at the cause. This reads the cause.
-      #
-      # ONE SHORT LINE PER ITEM, because 130 characters in one does not arrive before its Return.
-      item "ask for the service's state"
-        input text "clear; svcs -H -o state svc:/application/graphical-login/lightdm:default"
-        type_gap 0.12
-        settle 8
-      item "press return on the question"
-        input ret
-        settle 10
-      # THE STATE IS READ BEFORE THE EXPLANATION IS ASKED FOR, AND THEY ARE TWO SEPARATE READINGS.
-      # `svcs -x` prints the words "not online" for a service in this state - and a gate looking for
-      # `online` would match that and pass. So the state goes into `dmstate` alone, on a screen that
-      # holds nothing else (`clear` first), and the explanation is asked for only after that reading
-      # has been taken, into a binding the gate never looks at.
-      item "read the state, on a screen that holds only the state"
-        read
-          name dmstate
-      item "ask why it is not online, for the log"
-        input text "svcs -x svc:/application/graphical-login/lightdm:default 2>&1 | tail -8"
-        type_gap 0.12
-        settle 9
-      item "press return on the explanation"
-        input ret
-        settle 8
-      item "read the explanation, which the gate does not use"
-        read
-          name dmwhy
-    until
-      bind up
-      source dmstate
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      words [[online]]
-      without [disabled]
-    max 60
-
-
-# THE STATE IS ASKED AT THE CONSOLE, NOT OVER SSH, FOR THE REASON THE STEP ABOVE DOCUMENTS:
-# run 45713558013 answered `no route to host` on the ssh probe while the disk underneath was
-# perfect. `svcs` runs in the same root shell the enable just used, and its answer is one word.
-# TWO ITEMS, NOT ONE, FOR THE SAME REASON THE INSTALL IS A SCRIPT: A RETURN SENT WITH THE TEXT IS EATEN.
-#
-# MEASURED on run 45715663946, which sat here for eight minutes: `input text` and `input ret` in a
-# single item sends the Return before the line has been read, so the console showed the command and a
-# cursor and nothing else, thirty times over.
-#
-# AND `online` ALONE IS A WORD A BOOT LOG CAN CARRY. `svcs` prints one word; a machine that is still
-# booting prints `online` in its SMF line. The gate looks for `lightdm` AND `online` in the same
-# reading, which is the service's own line and nothing else.
-
-step "the desktop is on screen"
-  repeat
-    do
-      item
-        settle 10
-      item "read the screen"
-        read
-          name screen
-    until
-      bind desktop
-      source screen
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      words [["Applications"]]
-    max 60
-
+step "let the last extent land"
+  settle 30
 
 
 step "stop the machine"
@@ -1160,4 +507,4 @@ step "stop the machine"
 
 
 step "publish the disk"
-    save "{{ out }}"
+  save "{{ out }}"

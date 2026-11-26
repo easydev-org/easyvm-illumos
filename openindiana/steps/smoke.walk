@@ -31,6 +31,22 @@
 # whole-disk EFI layout. So `BdsDxe` would never appear and waiting for it would time out on a disk
 # that boots perfectly.
 #
+# TWO LOGIN PROMPTS ARE ACCEPTED, BECAUSE THE GUI INSTALL PRODUCES ONE AND THE TEXT ONE THE OTHER.
+#
+# MEASURED on the pod, 2026-11-26. A disk installed from the MINIMAL ISO reaches the text console and
+# prints `openindiana console login:`. A disk installed from the GUI ISO - which is what this
+# repository's install leg uses now, because it carries the desktop - boots into lightdm and draws
+#
+#	openindiana                                  (the hostname in the top bar)
+#	[ username ]  [ Enter your password ]
+#	Cancel                            Log In
+#
+# so a gate that only knows `console login` would time out on a disk that came up perfectly. `Log In`
+# is the lightdm button's own text and appears nowhere else on that screen.
+#
+# THE WHOLE FRAME IS READ RATHER THAN A BOTTOM STRIP: the text prompt sits at the bottom and the
+# graphical one in the middle, so one rect cannot cover both.
+#
 # THE WITNESS IS THEREFORE THE LOGIN PROMPT, which is a stronger claim than any firmware message: it
 # means the kernel mounted rpool, started svc:/system/console-login, and the system is up. MEASURED
 # at about two and a half minutes from `boot`.
@@ -95,9 +111,9 @@ step "the installed system is up"
       bind login
       source up
       mode text
-      rect [0, 840, 1920, 1080]
+      rect [0, 0, 1920, 1080]
       rect_at [1920, 1080]
-      words [[console, login], [login]]
+      words [[console, login], [Log, In]]
     max 60
 
 
