@@ -234,18 +234,34 @@ step "what session files and greeters this disk has"
 # can load, and the log above was truncated to its last fifteen lines. THIS STEP READS THE WHOLE THING
 # plus the driver directory and /etc/X11, so the next change is made from evidence.
 step "what drivers and framebuffers this disk has"
-  run "test -f /var/log/Xorg.0.log && grep -nE 'NEVER|DRIVER|Driver|vgafb|VGA|Screen|Fatal|\\(EE\\)' /var/log/Xorg.0.log | head -24; echo '--- drivers ---'; ls /usr/lib/xorg/modules/drivers/; echo '--- xorg pkgs ---'; pkg list -H | grep -iE 'xorg-video|xorg-server' | head -14; echo '--- kernel ---'; modinfo | grep -iE 'vgafb|vga' | head -3; ls -l /dev/fb* 2>&1"
+  run "echo '--- fbs ---'; ls -l /dev/fbs/ 2>&1; echo '--- vgafb ---'; ls -l /dev/vgafb* 2>&1; echo '--- drivers ---'; ls /usr/lib/xorg/modules/drivers/amd64/ 2>&1; echo '--- xorg pkgs ---'; pkg list -H | grep -iE 'xorg-video|xorg-server' | head -14; echo '--- devices ---'; prtconf -d | grep -iE 'display' ; echo '--- last EE ---'; grep -E '\\(EE\\)|No devices' /var/log/Xorg.0.log 2>&1 | head -8"
   via ssh
   timeout 180
 
 
-# THE DRIVER, NOT THE DISPLAY MANAGER. `no screens found` means Xorg found the device and no driver
-# willing to claim it, so this step tries the drivers an illumos disk ships until one holds the screen.
+# `startx` IS A SHELL SCRIPT AND THIS DISK'S SH CANNOT RUN IT.
 #
-# THE CONFIG IS WRITTEN WITHOUT QUOTES BECAUSE XORG ACCEPTS BARE TOKENS - `Driver vga` parses the same
-# as `Driver "vga"` - which keeps this command readable inside the walk's own quoting.
-step "start X with a driver this disk has"
-  run "echo 'exec dbus-run-session mate-session' > /tmp/xinitrc; chmod +x /tmp/xinitrc; for d in vga vesa modesetting; do { echo 'Section Device'; echo 'Identifier Card0'; echo \"Driver $d\"; echo 'EndSection'; } > /tmp/xorg-$d.conf; nohup ck-launch-session startx /tmp/xinitrc -- -config /tmp/xorg-$d.conf > /tmp/startx-$d.log 2>&1 & sleep 22; if pgrep -f Xorg > /dev/null; then echo \"driver $d: X IS UP\"; break; else echo \"driver $d: died\"; grep -E 'EE|Fatal|no screens|not found' /tmp/startx-$d.log | head -4; fi; done; echo '--- running ---'; pgrep -fl 'Xorg|mate-session|mate-panel' | head -5"
+# MEASURED on run 45882605338, step 11/17 - every one of the three driver attempts reported the same
+# two lines before its own Fatal:
+#
+#	driver vga: died
+#	builtin: readlink: not found
+#	(EE) Fatal server error:
+#
+# SO `82e429d`'s `startx` succeeded once (it wrote /var/log/Xorg.0.log) and then the disk's own
+# /usr/bin/startx began failing on `readlink`, which means THE DRIVER WAS NEVER TESTED AT ALL. The
+# attempts were not evidence about vga/vesa/modesetting; they were evidence about a broken script.
+#
+# AND THE LOG THAT DID GET WRITTEN SAYS WHAT XORG ITSELF THINKS:
+#
+#	[74.090] (EE) No devices detected.
+#	[74.091] (EE) no screens found(EE)
+#
+# THAT IS LIGHTDM'S OWN XORG TRIAL AT BOOT, with no config of ours, so it is the honest default answer.
+# THIS STEP THEREFORE CALLS `Xorg` DIRECTLY - no startx, no xinit - with each driver's config, and keeps
+# the server's own log for whichever one it tries.
+step "start Xorg directly, with a driver this disk has"
+  run "for d in vga vesa; do { echo 'Section Device'; echo 'Identifier Card0'; echo \"Driver $d\"; echo 'EndSection'; } > /tmp/xorg-$d.conf; Xorg :0 -config /tmp/xorg-$d.conf -logfile /tmp/Xorg-$d.log > /tmp/xorg-$d.out 2>&1 & sleep 12; if pgrep -f 'Xorg :0' > /dev/null; then echo \"driver $d: X IS UP\"; export DISPLAY=:0; nohup dbus-run-session mate-session > /tmp/mate-$d.log 2>&1 & sleep 15; echo \"mate: \$(pgrep -c -f mate-session)\"; break; else echo \"driver $d: died\"; grep -E '\\(EE\\)|No devices' /tmp/Xorg-$d.log | head -5; fi; done; echo '--- running ---'; pgrep -fl 'Xorg|mate-session|mate-panel' | head -5"
   via ssh
   timeout 400
 
