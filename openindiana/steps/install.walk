@@ -50,6 +50,15 @@ password admin
 var user
   default vmuser
   from args.user
+# THE GUEST'S MEMORY IS DECLARED, BECAUSE THE INSTALLER IS THE HEAVIEST THING HERE.
+#
+# MEASURED on run 45806933916: the transfer reached only 24% and the machine restarted, and CI's own
+# stage could not check the size at all because this file named none - it printed "the guest size is
+# the engine's default". The GUI wizard copies 1368 packages and builds cpio lists in memory while
+# the live MATE desktop is resident; 4 GiB is what the `-m 4096` in the boot args asks for, and
+# saying it here lets `stage.yml` refuse a runner that cannot hold it instead of letting the guest be
+# killed a few minutes in.
+# memory_mb == 4096
 
 step "the media this stage boots from is already on disk"
   needs [OI-hipster-gui-20261030.iso]
@@ -470,31 +479,116 @@ step "install"
 # SO THE LOOP BELOW TYPES `jack` AND RETURN WHEN THE LOCK IS UP, WHICH IS A NO-OP WHEN IT IS NOT, AND
 # LOOKS FOR THE WIZARD'S OWN LAST PAGE: `Finished` with "OpenIndiana installation is complete". That
 # sentence appears once, at the end, and is the wizard's statement rather than an inference.
-step "the install finishes"
+# THE WIZARD'S OWN PAGE IS THE GATE, AND THE REBOOT IS ALSO A FINISH.
+#
+# MEASURED on run 45806933916, round by round:
+#
+#	[1.4]   Applications Places System ...          the live desktop, wizard still copying
+#	[10.4]  Applications Places System ...          still copying
+#	[25.4]  Booting... OpenIndiana Hipster ... vmuser   THE MACHINE REBOOTED, and `vmuser` is the
+#	                                                unlock text this loop typed, echoed back
+#	[40.4]  4, French 5, German 6, Italian ...      back at the live image's LANGUAGE page
+#
+# So the wizard finished and restarted the live system, and because the disc is still attached the
+# machine booted THE DISC again - landing on the language selector, where ninety more rounds of
+# `vmuser`+Return were typed into a menu that takes numbers.
+#
+# TWO THINGS FOLLOW, AND BOTH ARE IN THE LOOP BELOW:
+#
+# 1  THE LOCK IS ONLY UNLOCKED WHEN IT IS REALLY UP. The old loop typed the account name every round,
+#    which is harmless on a desktop and destructive on a menu. `Enter your password` / `Default User`
+#    is the lock's own text, so the typing happens only for it.
+#
+# 2  A REBOOT COUNTS AS FINISHED. `Booting...` on the console, or the language list on screen, means
+#    the wizard closed - which is the same evidence as `installation is complete`, one page later. So
+#    they are alternatives in the same gate, and the run stops pressing keys the moment either shows.
+# NOTHING IS TYPED WHILE THE WIZARD IS COPYING, AND THE REASON IS THE 28% THAT RESTARTED.
+#
+# MEASURED on run 45806933916, from its own recording: at t=900s the wizard was on
+# `Installing ... 28%`; at t=1100s the machine was printing `Booting...`. The install had NOT
+# finished, and the only thing this walk was doing during that window was typing the account name and
+# Return every 30 seconds "in case the lockscreen came up".
+#
+# ON THE LIVE DESKTOP A STRAY RETURN IS HARMLESS. IN THE WIZARD IT IS NOT: a `Return` activates
+# whatever has focus, and the wizard's own buttons include `Quit`. A keystroke that lands during the
+# transfer can therefore abandon it - which is exactly the shape of a jump from 28% to a reboot.
+#
+# SO THE WIZARD PHASE TYPES NOTHING. The screensaver is a risk only for the LONG tail after the
+# copy, and it is handled by the step AFTER this one, which does not run until the copy is over.
+# NOTHING IS TYPED WHILE THE WIZARD IS COPYING, AND THE REASON IS THE 28% THAT RESTARTED.
+#
+# MEASURED on run 45806933916, from its own recording: at t=900s the wizard was on
+# `Installing ... 28%`; at t=1100s the machine was printing `Booting...`. The install had NOT
+# finished, and the only thing this walk was doing during that window was typing the account name and
+# Return every 30 seconds "in case the lockscreen came up".
+#
+# ON THE LIVE DESKTOP A STRAY RETURN IS HARMLESS. IN THE WIZARD IT IS NOT: a `Return` activates
+# whatever has focus, and the wizard's own buttons include `Quit`. A keystroke that lands during the
+# transfer can therefore abandon it - which is exactly the shape of a jump from 28% to a reboot.
+#
+# SO THE FIRST LOOP TYPES NOTHING AND ONLY WATCHES. It ends when the wizard says the install is
+# complete, or when the live image has restarted (its language page or `Chinese`/`French` list is the
+# tell). Only AFTER that does the deskclearing step below run, and it unlocks a lockscreen if one is
+# up - which is safe then, because the wizard is closed and no button can be hit by accident.
+step "the install finishes, and nothing is typed while it copies"
   repeat
     do
-      item "unlock the screensaver if it came up"
-        input text "{{ user }}"
-        settle 3
-      item "press return, which is the unlock when the lock is up"
-        input ret
-        settle 3
-      item "ask the screen whether the wizard is finished"
+      item "read the screen"
         read
           name done
-      item "is the wizard's Finished page up"
+      item "did the wizard finish, or has the live image already restarted"
         check
           source done
           mode text
           name finished
           rect [0, 0, 1024, 768]
           rect_at [1024, 768]
-          words [[installation, is, complete]]
+          words [[installation, is, complete], [Chinese], [French]]
       item "leave it alone while it copies"
         settle 25
     until
       finished
     max 90
+
+
+# NOW THE SCREEN MAY BE UNLOCKED, BECAUSE THE WIZARD IS CLOSED EITHER WAY.
+#
+# MEASURED: the MATE screensaver locks after ten minutes and paints `Default User / jack on
+# openindiana` with a password box, and the transfer runs longer than that. With the wizard gone, a
+# typed account name and Return can only reach that dialog - there is no `Quit` button left to hit.
+step "unlock the screen if the screensaver came up"
+  repeat
+    do
+      item "read the screen"
+        read
+          name lockstate
+      item "is the lockscreen up"
+        check
+          source lockstate
+          mode text
+          name locked
+          rect [0, 0, 1024, 768]
+          rect_at [1024, 768]
+          words [[Enter, your, password], [Default, User]]
+      item "type the account name when it is"
+        if locked
+          then
+            item
+              input text "{{ user }}"
+              settle 2
+            item
+              input ret
+              settle 3
+      item "look again"
+        settle 5
+    until
+      bind gone
+      source lockstate
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      without [[Enter, your, password], [Default, User]]
+    max 20
 
 
 step "let the last extent land"
