@@ -118,8 +118,25 @@ step "prove the boot environment is the one that was installed"
 #
 # SO THIS STAGE ASKS THE ONE QUESTION IT IS NAMED FOR: does a remote shell reach the installed system,
 # and is the desktop the install leg put behind it actually up?
+# `ssh:` CHECKS THE EXIT STATUS, AND `svcs` EXITS 0 WHATEVER THE STATE IS.
+#
+# MEASURED on run 45863256664, step 6/12: the step PASSED and its own output was
+#
+#	maintenance
+#
+# `svcs -H -o state <fmri>` returns 0 when it FOUND the service, not when the service is healthy - so
+# this gate accepted `maintenance` (a crashed, disabled-until-repaired instance) as "the session the
+# install stage left", and the walk then waited ten minutes for a desktop that lightdm was never going
+# to draw:
+#
+#	=== the desktop is on screen
+#	  error: the repeat ran 60 attempt(s) and the condition never held: none of "Applications" in
+#	         "Loading smf(7) service descriptions: 177/177 ... WARNING: audiohd: ddi_dma_mem_alloc failed"
+#
+# SO THE COMMAND MUST FAIL WHEN THE STATE IS WRONG. `[ "$(svcs -H -o state ...)" = online ]` is the
+# assertion; the state is echoed either way so the log always says what it was.
 step "the session is the one the install stage left"
-  ssh "svcs -H -o state svc:/application/graphical-login/lightdm:default"
+  ssh "s=$(svcs -H -o state svc:/application/graphical-login/lightdm:default); echo \"lightdm=$s\"; [ \"$s\" = online ]"
   timeout 180
 
 
