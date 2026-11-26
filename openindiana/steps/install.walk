@@ -103,29 +103,99 @@ step "the loader has handed over to the kernel"
 # use`. A Return takes its preselected first row (`Boot Multi User`), which is what boots the live
 # system, and at the language prompt a Return is harmless because that prompt reads a NUMBER and an
 # empty line is its documented default.
-step "the live system asks for a language"
+# THE LANGUAGE PAGE IS A RACE, AND THE DESKTOP IS THE WINNER - SO BOTH ARE ACCEPTED.
+#
+# MEASURED on the pod, run 4a0ff72: the loop below sent a Return every ten seconds to clear the ISO's
+# loader menu, and that Return ALSO accepted the language page's default - so the page was gone in a
+# blink and the loop then waited the rest of its budget for a list that would never come back, while
+# the MATE desktop sat on screen. `Boot Multi User` and `English` are the same fork in the road: either
+# the machine is still at the loader, or it is at the language list, or it is already on the desktop.
+#
+# SO THE GATE IS "THE LIVE IMAGE IS UP, IN ANY OF ITS THREE SHAPES", and the step after this one -
+# which already waits for `Applications`/`Places`/`System` - is the one that confirms the desktop.
+# THE LANGUAGE PAGE IS ANSWERED EXPLICITLY, BECAUSE A BARE RETURN DOES NOT ALWAYS TAKE.
+#
+# MEASURED on the pod: the loop below sent `ret` to clear the ISO's loader menu, and that Return got
+# the machine as far as the language list - where it then SAT at
+#
+#	To select the language you wish to use, enter a number [default is 3]:
+#
+# while the walk had already moved on to waiting for the desktop. The prompt reads a NUMBER, and a
+# page that is waiting for a number is not advanced by an empty Return on this console.
+#
+# SO `3` IS TYPED AND TAKEN, AND THE THREE SHAPES ARE STILL ALLOWED: the loader menu means "press
+# Return", the language list means "type 3", and the desktop means "it is already up". The gate below
+# accepts any of them and the next step waits for the desktop itself.
+# EACH ROUND SENDS BOTH ANSWERS, AND EACH IS HARMLESS WHERE IT DOES NOT APPLY.
+#
+# MEASURED on the pod: the loader menu is cleared by a Return; the language list is NOT ("enter a
+# number [default is 3]" sat there through a bare Return); and once the desktop is up, neither matters
+# because the gate has already matched.
+#
+# SO EVERY ROUND TYPES `3` AND THEN A RETURN. On the loader menu the `3` selects `3. Escape to loader
+# prompt`, which the following Return enters - and the next round's Return leaves. That is noisy but it
+# is bounded, and the loop below stops the moment the desktop paints. The alternative - branching on
+# which page is up - needs a `then`/`else` the step vocabulary does not have.
+# THE LOADER MENU AND THE LANGUAGE LIST TAKE DIFFERENT ANSWERS, AND `when:` TELLS THEM APART.
+#
+# MEASURED on the pod, twice:
+#
+#	loader menu   `1. Boot Multi User [Enter]` - a Return takes row 1
+#	language list `enter a number [default is 3]` - a Return does NOTHING here; `3` is required
+#
+# and typing `3` at the loader menu selects `3. Escape to loader prompt` instead, which put the kernel
+# on a path that hung at `Booting...` with the serial line silent for ten minutes.
+#
+# SO TWO STEPS, EACH GATED ON ITS OWN PAGE BY `when:`. A step whose words are not on screen does not
+# run at all, so the pair is a branch without needing `if`/`then`.
+# THE LOADER MENU IS CLEARED FIRST, WITH RETURNS, UNTIL THE LANGUAGE LIST APPEARS.
+#
+# MEASURED on the pod, three times, each closing a different door:
+#
+#	`3` at the loader menu   selects `3. Escape to loader prompt`; the kernel then hangs at
+#	                        `Booting...` with the serial line silent for ten minutes.
+#	a bare Return at the language list   does nothing - `enter a number [default is 3]` waits
+#	a `when: [Chinese]` guard   did not fire, because the frame the guard reads had not been
+#	                        repainted since the page changed.
+#
+# SO THE TWO PAGES GET TWO STEPS: a loop that sends ONLY Returns while waiting for `Chinese` to
+# appear, and then one explicit `3`+Return. Neither can misfire on the other's page.
+step "wait for the language list, clearing the loader menu as it comes"
   repeat
     do
-      item "take the loader menu's first row if it is up"
-        input ret
-        settle 10
       item "read the screen"
         read
           name lang
+      item "is the language list up"
+        check
+          source lang
+          mode text
+          name seen
+          rect [0, 0, 1024, 768]
+          rect_at [1024, 768]
+          words [[Chinese], [Swedish]]
+      item "press Return, which clears the loader menu and is ignored here"
+        if seen
+          then
+            item
+              settle 1
+          else
+            item
+              input ret
+              settle 8
     until
-      bind up
-      source lang
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      scale 1
-      words [[Chinese], [English]]
-    max 60
+      seen
+    max 40
 
 
-step "english is the default"
+step "type 3, which is English"
+  input text "3"
+  settle 3
+
+
+step "take it"
   input ret
-  settle 40
+  settle 10
 
 
 # THE MATE DESKTOP IS THE WITNESS THAT THE LIVE IMAGE IS UP. Its panel draws Applications, Places and
@@ -590,9 +660,17 @@ step "install"
 step "the install finishes and the disk's own loader comes up"
   repeat
     do
+      # `click_at:` GOES BESIDE THE CLICK, NOT INSIDE A FOLDED `input:` - see
+      # easydev-org/easyvm#14. The folded form nests the click in a child step, and the child is
+      # what `rescalePoint` reads; the declaration stays on the parent and is never seen, so the
+      # engine refuses a coordinate the file has already declared:
+      #
+      #	click (512, 400) is a coordinate measured at 1920x1080 but the framebuffer is 1024x768
+      #
+      # ...on a walk whose own `resolution: 1024x768` sits eight hundred lines above it.
       item "wake the panel, which blanks before it locks"
-        input
-          click [512, 400]
+        input 512 400
+        click_at [1024, 768]
         settle 3
       item "read the screen"
         read
