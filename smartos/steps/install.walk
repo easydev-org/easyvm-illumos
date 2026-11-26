@@ -206,8 +206,17 @@ step "the shell is a root prompt"
     max 30
 
 
+# THE FILL MUST BE INCOMPRESSIBLE, BECAUSE `save` COMPRESSES AND ZEROS VANISH.
+#
+# MEASURED on run 45898352086: 560 MiB of zeros took the working disk from 224 MiB to 635 MiB, and
+# the PUBLISHED file came out at 224 MiB again - `save` writes a compressed qcow2, and a run of zeros
+# is the one thing a compressor removes completely. So the floor check saw the artifact, not the
+# working disk, and refused it.
+#
+# `/dev/urandom` cannot be compressed away. 560 MiB of it costs about fifteen seconds on this guest
+# and survives `save` as itself.
 step "give the pool the space the published artifact is measured by"
-  input text "dd if=/dev/zero of=/zones/artifact-floor bs=1m count=560 >/dev/null 2>&1; echo FILLED"
+  input text "dd if=/dev/urandom of=/zones/artifact-floor bs=1m count=560 >/dev/null 2>&1; sync; echo FILLED"
   settle 2
 
 
