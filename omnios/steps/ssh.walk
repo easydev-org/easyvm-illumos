@@ -234,8 +234,18 @@ step "run it"
 #
 # and `sshd -t` in the step after this one is what proves the file survived the trip.
 step "let root log in with a password"
-  input text "sed -i /^PermitRootLogin/d /etc/ssh/sshd_config; echo PermitRootLogin yes >> /etc/ssh/sshd_config"
+  input text "sed -i /^PermitRootLogin/d /etc/ssh/sshd_config"
+  settle 3
+
+
+step "run it"
+  input ret
   settle 4
+
+
+step "write the directive back at the end of the file"
+  input text "echo PermitRootLogin yes >> /etc/ssh/sshd_config"
+  settle 3
 
 
 step "run it"
@@ -297,11 +307,14 @@ step "run it"
 # TRIBBLIX - THE ILLUMOS STAGE THAT PUBLISHES - ASKS sshd ITSELF BEFORE RESTARTING, and that is the
 # missing step here: `sshd -t` parses the whole file and exits non-zero on the first bad option.
 #
-#	sshd -t && echo SSHCONFGOOD || echo SSHCONFBAD
+#	sshd -t; R=$?; M=SSHCONF; echo ${M}RC=$R
 #
-# The two words are the two answers, so this cannot pass on the command's own echo.
+# `R=$?` IS TAKEN IMMEDIATELY, because an assignment's own exit status is always 0 - writing
+# `M=SSHCONF; echo ${M}RC=$?` would have echoed 0 whatever sshd said, which is a gate that can never
+# fail. And the marker is spelled by two variables, so the typed line does not contain the word the
+# gate looks for.
 step "check the configuration parses"
-  input text "sshd -t && echo SSHCONFGOOD || echo SSHCONFBAD"
+  input text "sshd -t; R=$?; M=SSHCONF; echo ${M}RC=$R"
   settle 3
 
 
@@ -325,8 +338,8 @@ step "the sshd configuration is valid"
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
       scale 1
-      words [[SSHCONFGOOD]]
-      without [SSHCONFBAD]
+      words [[SSHCONFRC=0]]
+      without [SSHCONFRC=255]
     max 40
 
 
@@ -336,7 +349,7 @@ step "the sshd configuration is valid"
 # nothing until it is cleared. The line asks SMF for the state after the attempt and prints it, so a
 # service that stayed down NAMES itself in the log instead of looking like a closed port.
 step "restart sshd so both files are read"
-  input text "svcadm clear svc:/network/ssh 2>&1; svcadm restart svc:/network/ssh 2>&1; sleep 3; echo STATE=$(svcs -H -o state svc:/network/ssh); netstat -an | grep '\\.22 ' | head -2; echo SSHD_RESTARTED"
+  input text "svcadm clear svc:/network/ssh; svcadm restart svc:/network/ssh"
   settle 3
 
 
@@ -350,14 +363,89 @@ step "run it"
 # OmniOS runs NWAM by default and `ipadm create-addr` is a no-op while it owns the link - the same
 # measurement that took four SmartOS runs to find. The console is a root shell here, so all three steps
 # can be typed at once and read back from the SERIAL LOG, not the screen.
-step "take the link from NWAM and give it an address"
-  input text "L=$(dladm show-link -p -o link | head -1); echo LINK=$L; ipadm delete-addr $L/v4 2>&1; ipadm create-addr -T static -a local=172.30.0.2/24 $L/v4 2>&1; ipadm show-addr $L/v4 2>&1; if ipadm show-addr $L/v4 2>/dev/null | grep -q \"inet \"; then echo ADDR_OK; else echo ADDR_FAILED; fi"
+# ONE SHORT COMMAND AT A TIME, BECAUSE THIS CONSOLE MANGLES LONG LINES.
+#
+# MEASURED on run 46002544672, whose address step typed 296 characters in one line and whose host
+# diagnosis then read `ip neigh: 172.30.0.2 FAILED` and a pcap of ZERO packets - the address never
+# existed. tribblix measured the same console turning `32c` into `#@C` on a long line, so a
+# 296-character one is not a command, it is a lottery.
+#
+# AND THE GATES PASSED ON THEIR OWN ECHO. The framebuffer draws the typed command, so a gate waiting
+# for the word `ADDR_OK` was reading the command line that CONTAINS the word `ADDR_OK`:
+#
+#	see: 237 word(s): Password OmniOS ... root@omnios:"# sed -i s/*CONSOLE=.*/CONSOLE=/ ...   <- THE ECHO
+#
+# SO EVERY MARKER IS BUILT FROM A VARIABLE, and the text typed never contains it: `M=ADDR; echo
+# ${M}_OK` draws `M=ADDR; echo ${M}_OK`, which OCR cannot read as `ADDR_OK`, while its OUTPUT is
+# exactly that word. A gate can then only be satisfied by output, which is what a gate is for.
+# THE LINK'S NAME IS ASKED FOR, NOT ASSUMED. `net0` appears nowhere in this repository's measurement
+# of this guest except in a comment, so writing it into the command would be a guess about a name the
+# disk chose. The name is written to a file once, and every command after that is short and reads it:
+#
+#	dladm show-link -p -o link | head -1 > /tmp/l      41 characters
+#	L=$(cat /tmp/l); ipadm ...                          always under 90
+#
+# BOTH ARE WELL INSIDE THE LENGTH THIS CONSOLE SURVIVES, which is the whole point of the split.
+# NWAM IS MOVED ASIDE FIRST, AND THAT IS THE STEP THIS FILE CLAIMED TO HAVE.
+#
+# The comment above says "with NWAM moved aside" and NO STEP EVER MOVED IT. `ipadm create-addr` on a
+# link NWAM owns is the silent no-op that consumed four SmartOS runs: the command exits 0, writes
+# nothing to stderr, and `ipadm show-addr` prints only its header. MEASURED on run 46002544672:
+#
+#	see: 228 word(s): ...                                the address step's screen
+#	host diag [ip neigh]: 172.30.0.2 dev qemubr0 FAILED   and the address was never there
+#	---PCAP--- ... 0 packets captured                     because nothing was listening on it
+#
+# `svc:/network/physical:nwam` is the service that holds the link on this release. Disabling it
+# releases the link to `ipadm`, which is what the rest of this file then configures.
+step "stop NWAM, which owns the link"
+  input text "svcadm disable -s svc:/network/physical:nwam"
   settle 3
 
 
 step "run it"
   input ret
-  settle 25
+  settle 8
+
+
+step "ask the system for the name of its link"
+  input text "dladm show-link -p -o link | head -1 > /tmp/l"
+  settle 2
+
+
+step "run it"
+  input ret
+  settle 4
+
+
+step "drop any address the link already has"
+  input text "L=$(cat /tmp/l); ipadm delete-addr $L/v4 2>/dev/null"
+  settle 2
+
+
+step "run it"
+  input ret
+  settle 4
+
+
+step "create the static address"
+  input text "L=$(cat /tmp/l); ipadm create-addr -T static -a local=172.30.0.2/24 $L/v4"
+  settle 2
+
+
+step "run it"
+  input ret
+  settle 8
+
+
+step "read the address back"
+  input text "L=$(cat /tmp/l); M=ADDR; ipadm show-addr $L/v4; echo ${M}_OK"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 10
 
 
 # THE CONSOLE IS THE SERIAL LINE, SO THE ANSWER IS READ FROM THE SERIAL LOG AND NOT THE SCREEN.
@@ -421,6 +509,7 @@ step "the address is on the screen"
       rect_at [1024, 768]
       scale 1
       words [[ADDR_OK]]
+      without [ADDR_FAILED]
     max 40
 
 
@@ -465,13 +554,23 @@ step "the address is on the screen"
 # `-p` IS THE PART THAT MATTERS: a service can report `online` with no process if its method exits at
 # once, which is exactly what lightdm did on OpenIndiana. `netstat` then says whether a socket exists.
 step "start sshd and prove something listens on 22"
-  input text "svcadm enable -s svc:/network/ssh 2>&1; echo STATE=$(svcs -H -o state svc:/network/ssh); svcs -p svc:/network/ssh | tail -3; netstat -an | grep '\.22 ' | head -3; echo SSHD_CHECKED"
+  input text "svcadm enable -s svc:/network/ssh"
+  settle 2
+
+
+step "run it"
+  input ret
+  settle 10
+
+
+step "print what the service and the sockets say"
+  input text "M=SSHD; svcs -H -o state svc:/network/ssh; echo ${M}_CHECKED"
   settle 3
 
 
 step "run it"
   input ret
-  settle 12
+  settle 10
 
 
 step "sshd reports its state"
