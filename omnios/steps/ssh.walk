@@ -516,8 +516,19 @@ step "run it"
 #
 # `svc:/network/physical:nwam` is the service that holds the link on this release. Disabling it
 # releases the link to `ipadm`, which is what the rest of this file then configures.
-step "stop NWAM, which owns the link"
-  input text "svcadm disable -s svc:/network/physical:nwam"
+# NWAM IS DISABLED PERMANENTLY, NOT JUST FOR THIS SESSION.
+#
+# MEASURED on run 46012552092: the address was configured from the root shell, the host then read
+# `ip neigh: 172.30.0.2 FAILED` and captured ZERO packets, and the screen at the address gate showed
+# `Applying initial boot settings ... console login` - THE MACHINE HAD REBOOTED, which this release does
+# once after the first boot settings are applied. The shell session that held the address was gone with
+# it, and so was the address.
+#
+# `-s` waits for the transition, `-t` makes the disable survive that reboot. Without `-t` the service is
+# enabled again on the next boot and takes the link back from `ipadm`, which is the silent no-op this
+# stage has already paid for once.
+step "stop NWAM for good, because it owns the link"
+  input text "svcadm disable -st svc:/network/physical:nwam"
   settle 3
 
 
@@ -546,6 +557,19 @@ step "run it"
   settle 4
 
 
+# THE LINK MUST EXIST BEFORE IT CAN HAVE AN ADDRESS. NWAM plumbed it; with NWAM gone the interface has
+# to be created, and `ipadm create-if` is what does that. Its failure when the interface already exists
+# is harmless and is why the command ends with `|| true`.
+step "make sure the interface exists"
+  input text "L=$(cat /tmp/l); ipadm create-if $L || true"
+  settle 2
+
+
+step "run it"
+  input ret
+  settle 5
+
+
 step "create the static address"
   input text "L=$(cat /tmp/l); ipadm create-addr -T static -a local=172.30.0.2/24 $L/v4"
   settle 2
@@ -557,13 +581,23 @@ step "run it"
 
 
 step "read the address back"
-  input text "L=$(cat /tmp/l); M=ADDR; ipadm show-addr $L/v4; echo ${M}_OK"
+  input text "L=$(cat /tmp/l); ipadm show-addr $L/v4 > /tmp/da"
   settle 3
 
 
 step "run it"
   input ret
-  settle 10
+  settle 6
+
+
+step "say whether the address is really there"
+  input text "grep inet /tmp/da && echo ADDR_OK || echo ADDR_NONE"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 8
 
 
 # THE CONSOLE IS THE SERIAL LINE, SO THE ANSWER IS READ FROM THE SERIAL LOG AND NOT THE SCREEN.
@@ -630,7 +664,7 @@ step "the address is on the screen"
       rect_at [1024, 768]
       scale 1
       words [[ADDR_OK]]
-      without [ADDR_FAILED]
+      without [ADDR_NONE]
     max 40
 
 
@@ -743,8 +777,26 @@ step "flush the writes before the machine stops"
   ssh "sync"
 
 
+# `shutdown -i 0` HALTS THE OS AND LEAVES qemu RUNNING - MEASURED, TWICE, ON THIS STAGE AND ON SMARTO S.
+#
+# Its own console says it finished:
+#
+#	Shutdown started.    Fri Nov 27 14:13:29 UTC 2026
+#	Changing to init state 0 - please wait
+#
+# and then, five minutes later:
+#
+#	error: wait_until: stopped was never satisfied within 5m0s: the machine is still running
+#
+# Init state 0 stops the guest's init, not its process, so `wait_until stopped` can never hold and the
+# published disk is thrown away after every check above has already passed.
+#
+# `stop ssh` IS WHAT THE TWO ILLUMOS STAGES THAT PUBLISH USE - tribblix and openindiana, and now smartos
+# too. The engine runs the shutdown over ssh and then waits on qemu's own process, which is a fact about
+# the machine rather than about the guest's init state.
 step "shut the machine down"
-  ssh "shutdown -i 0 -g 0 -y"
+  stop ssh
+  timeout 300
 
 
 step "wait for the machine to stop"
