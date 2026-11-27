@@ -59,39 +59,56 @@ step "boot the published disk"
 #
 # SO NOTHING IS PRESSED HERE. The menu's own words are waited for, and the step after this one takes
 # row 2.
-step "the boot menu is on screen"
-  repeat
-    do
-      item
-        settle 5
-      item "read the console"
-        read
-          name menu
-    until
-      bind up
-      source menu
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      scale 1
-      words [[Multi, User], [Boot]]
-    max 30
-
-
-step "take the menu's own single-user row"
+# THE MENU AUTOBOOTS IN SIX SECONDS, AND `[Space] TO PAUSE` IS WHAT ITS OWN FOOTER SAYS.
+#
+# MEASURED FROM THE RECORDING of run 45957674215, frame at 6s:
+#
+#	┌────────── Welcome to OmniOS ──────────┐
+#	  1. Boot Multi User [Enter]
+#	  2. Boot Single User
+#	  3. Escape to loader prompt
+#	  4. Reboot
+#
+#	Options:
+#	  5. Configure Boot Options...
+#	  6. Select Boot Environment...
+#
+#	Autoboot in 6 seconds. [Space] to pause
+#
+# SO THERE IS NO TIME TO WAIT FOR A GATE AND THEN CHOOSE. The six earlier commits each waited for the
+# menu's words first - which took a read of several seconds - and by the time a key was sent the
+# countdown had already taken row 1. That is why every one of them produced a normal multi-user boot
+# (`OmniOS r151060 Version ...`) no matter whether it pressed `esc`, `down`+`ret`, or `-s`.
+#
+# THE MENU IS PAUSED FIRST AND CHOOSEN SECOND, and both happen inside one `do` block so no read comes
+# between them:
+#
+#	space     stops the countdown, which its own footer documents
+#	2         the row named `Boot Single User`
+#	ret       takes it
+#
+# The pair is repeated because a key that arrives before the menu is drawn is lost, and a second space
+# on an already-paused menu changes nothing.
+step "pause the countdown and take row 2 in the same breath"
   do
     item
-      input down
-      settle 1
+      input spc
+      settle 2
+    item
+      input text "2"
+      settle 2
     item
       input ret
-      settle 8
+      settle 12
     item
-      input down
-      settle 1
+      input spc
+      settle 2
+    item
+      input text "2"
+      settle 2
     item
       input ret
-      settle 8
+      settle 12
 
 
 step "the single-user shell is up"
