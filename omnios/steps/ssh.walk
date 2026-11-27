@@ -294,9 +294,25 @@ step "run it"
 #
 # `passwd -r files root` IS THE ILLUMOS SPELLING and `-r files` names the database the installer used,
 # so this does not depend on which repository the account lives in.
+# EVERY `input text` NEEDS A RETURN AFTER IT, AND THIS SEQUENCE WAS MISSING TWO.
+#
+# MEASURED on run 46010491435, read straight off the guest's screen:
+#
+#	root@omnios:"# passwd -r files rootadmin passwd: User unknown: rootadmin
+#	root@omnios:"# admin -bash: admin: command not found
+#
+# `passwd -r files root` WAS NEVER ENTERED - the next `input text "admin"` was appended to the same
+# line, so the shell ran a command called `passwd -r files rootadmin`, and the password was then
+# typed at a prompt that was not the password prompt. ROOT'S PASSWORD ON THIS DISK IS STILL EMPTY,
+# which is the third of the three refusals this stage has been chasing.
 step "give root the password this stage's probe will use"
   input text "passwd -r files root"
-  settle 4
+  settle 3
+
+
+step "enter it"
+  input ret
+  settle 6
 
 
 step "type the new password"
@@ -304,9 +320,9 @@ step "type the new password"
   settle 3
 
 
-step "run it"
+step "enter that"
   input ret
-  settle 3
+  settle 6
 
 
 step "type it again, as passwd asks"
@@ -314,9 +330,52 @@ step "type it again, as passwd asks"
   settle 3
 
 
+step "enter it again"
+  input ret
+  settle 8
+
+
+# THE PASSWORD IS PROVEN PRESENT, NOT ASSUMED FROM THE TYPING.
+#
+# The two `passwd` bugs (a missing Return after the command, and a missing Return after each password)
+# each failed silently: `passwd` printed `User unknown`, the shell printed `command not found`, and the
+# stage carried on. So the account's own database is asked whether it now holds a password hash - `*`
+# is what a locked account holds, and any other value is a real one.
+#
+#	P=$(grep root /etc/shadow | cut -d: -f2); test -n "$P" && echo PW_SET || echo PW_EMPTY
+#
+# and the gate waits for `PW_SET`. If it prints `PW_EMPTY`, the failure names the account rather than
+# appearing twenty minutes later as "sshd does not accept a connection".
+step "prove root now has a password"
+  input text "P=$(grep root /etc/shadow | cut -d: -f2); test -n \"$P\" && echo PW_SET || echo PW_EMPTY"
+  settle 3
+
+
 step "run it"
   input ret
-  settle 5
+  settle 6
+
+
+step "the account holds a password"
+  repeat
+    do
+      item "wake the console"
+        input ret
+        settle 2
+      item
+        settle 3
+      item "read the screen"
+        read
+          name pw
+    until
+      bind up
+      source pw
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[PW_SET]]
+    max 30
 
 
 # THE CONFIGURATION IS PARSED BEFORE THE RESTART, BECAUSE A BAD FILE IS A DEAD DAEMON.
