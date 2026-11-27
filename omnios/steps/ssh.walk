@@ -287,8 +287,29 @@ step "the address is on the screen"
 #
 #	svcadm enable -s svc:/network/ssh     `-s` waits for the transition, so the next step sees the result
 #	svcs -H -o state svc:/network/ssh     `online` or the state it actually reached
-step "start sshd, which this disk ships disabled"
-  input text "svcadm enable -s svc:/network/ssh; svcs -H -o state svc:/network/ssh; echo SSHD_STATE_PRINTED"
+# `SSHD_STATE_PRINTED` PASSED ON A RUN WHERE THE PORT WAS STILL CLOSED, SO IT PROVES NOTHING.
+#
+# MEASURED on run 45991078270, which passed this gate and then failed `wait for sshd`:
+#
+#	see: 144 word(s): OmniOS r151060 Version ...     <- THE BANNER, NOT A `svcs` LINE
+#	[until]: __until__ = true (read "SSHD_STATE_PRINTED")
+#	host diag [icmp guest]: ICMP_OK 2/2              network fine
+#	host diag [ss 22]: ---conn---                    and nothing listening
+#
+# The marker was printed by the `echo` at the end of the line whatever `svcadm` and `svcs` did - the same
+# mistake as `ADDR_DONE`. AND THE SCREEN STILL SHOWED THE KERNEL BANNER, so even the `svcs` output was not
+# being drawn where the reader looks.
+#
+# SO THE STEP NOW ASKS THE QUESTION THAT MATTERS AND PRINTS THE ANSWER ON ITS OWN LINE:
+#
+#	svcadm enable -s svc:/network/ssh        wait for the transition
+#	svcs -p svc:/network/ssh                 the state AND the process, when there is one
+#	netstat -an | grep '\.22 '               whether something is LISTENING on 22
+#
+# `-p` IS THE PART THAT MATTERS: a service can report `online` with no process if its method exits at
+# once, which is exactly what lightdm did on OpenIndiana. `netstat` then says whether a socket exists.
+step "start sshd and prove something listens on 22"
+  input text "svcadm enable -s svc:/network/ssh 2>&1; echo STATE=$(svcs -H -o state svc:/network/ssh); svcs -p svc:/network/ssh | tail -3; netstat -an | grep '\.22 ' | head -3; echo SSHD_CHECKED"
   settle 3
 
 
@@ -312,7 +333,7 @@ step "sshd reports its state"
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
       scale 1
-      words [[SSHD_STATE_PRINTED]]
+      words [[SSHD_CHECKED]]
     max 30
 
 
