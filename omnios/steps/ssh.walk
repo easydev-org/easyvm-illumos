@@ -189,6 +189,98 @@ step "the shell is a root prompt"
     max 30
 
 
+# THE PORT WAS OPEN AND THE LOGIN WAS REFUSED, AND THE PACKET CAPTURE SAYS SO.
+#
+# MEASURED on run 45994550498 - THE FIRST RUN WHOSE sshd DID LISTEN. Its `host diag [tap on dial]` pcap:
+#
+#	172.30.0.1.48394 > 172.30.0.2.22: Flags [S]     the host's SYN
+#	172.30.0.2.22 > 172.30.0.1.48394: Flags [S.]    answered, seq 814209107   <- sshd IS LISTENING
+#	172.30.0.1.48394 > 172.30.0.2.22: Flags [.]     ack
+#	172.30.0.1.48394 > 172.30.0.2.22: Flags [F.]    the host hung up
+#	172.30.0.2.22 > ... Flags [P.] seq 1:23         sshd sent its banner
+#
+# SO `ss 22: ---conn---` WAS NEVER "NOTHING LISTENING" - the handshake completed and the daemon spoke.
+# What failed was AFTER it: the probe closed the connection because root cannot log in over the network
+# on this disk, for the two reasons tribblix measured and this file never applied:
+#
+#	/etc/default/login      CONSOLE=/dev/console         root may log in ONLY at the console
+#	/etc/ssh/sshd_config    PermitRootLogin without-password   a KEY, never a password
+#
+# AND A THIRD, WHICH NO CONFIG CAN FIX: THE INSTALLER NEVER ASKED FOR A PASSWORD, so root's password is
+# EMPTY - and `password admin` in this file's header was a claim about a password nobody had set.
+#
+# ALL THREE ARE SET FROM THE ROOT SHELL THIS STAGE ALREADY HAS, as three short commands. THEY ARE SHORT
+# ON PURPOSE: tribblix measured a long line arriving mangled (`32c` as `#@C`, `|` as `?`), and one
+# command per keystroke is what made the same edits work there.
+step "lift the console restriction, which pins root to the console"
+  input text "sed -i s/^CONSOLE=.*/CONSOLE=/ /etc/default/login"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 5
+
+
+step "let root log in with a password"
+  input text "sed -i \"s/^PermitRootLogin.*/PermitRootLogin yes/\" /etc/ssh/sshd_config"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 6
+
+
+step "the directive now says yes"
+  input text "grep -c \"^PermitRootLogin yes\" /etc/ssh/sshd_config; echo CONFIG_EDITED"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 5
+
+
+# THE PASSWORD IS SET AT THE CONSOLE, TWICE, BECAUSE THE DISK HAS NONE AND `ssh` CANNOT TYPE ONE.
+#
+# `passwd -r files root` IS THE ILLUMOS SPELLING and `-r files` names the database the installer used,
+# so this does not depend on which repository the account lives in.
+step "give root the password this stage's probe will use"
+  input text "passwd -r files root"
+  settle 4
+
+
+step "type the new password"
+  input text "admin"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 3
+
+
+step "type it again, as passwd asks"
+  input text "admin"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 5
+
+
+step "restart sshd so both files are read"
+  input text "svcadm restart svc:/network/ssh; svcs -p svc:/network/ssh | tail -2; netstat -an | grep '\\.22 ' | head -2; echo SSHD_RESTARTED"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 12
+
+
 # AND THE LINK GETS AN ADDRESS, FROM THE SAME ROOT SHELL, WITH NWAM MOVED ASIDE.
 #
 # OmniOS runs NWAM by default and `ipadm create-addr` is a no-op while it owns the link - the same
