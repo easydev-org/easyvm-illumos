@@ -368,7 +368,7 @@ step "run it"
 
 
 step "check the configuration parses"
-  input text "sshd -t; echo CONFRC=$?"
+  input text "sshd -t 2>/tmp/se && echo CONF_PARSES || echo CONF_BROKEN; tail -3 /tmp/se"
   settle 3
 
 
@@ -395,7 +395,8 @@ step "the sshd configuration is valid"
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
       scale 1
-      words [[CONFRC=0]]
+      words [[CONF_PARSES]]
+      without [CONF_BROKEN]
     max 40
 
 
