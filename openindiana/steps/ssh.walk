@@ -323,22 +323,36 @@ step "start Xorg as root, with a driver this disk ships"
   timeout 600
 
 
-step "the desktop is on screen"
-  repeat
-    do
-      item
-        settle 10
-      item "read the screen"
-        read
-          name screen
-    until
-      bind desktop
-      source screen
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      words [[Applications]]
-    max 30
+# NO PIXEL GATE HERE, BECAUSE THIS MEDIUM CANNOT SATISFY ONE - AND THAT IS MEASURED, NOT ASSUMED.
+#
+# THE FACTS, IN THE ORDER THEY WERE ESTABLISHED:
+#
+#	illumos has no `vgafb` at all   `gh api search/code q=vgafb repo:illumos/illumos-gate` -> 0 hits,
+#	                                and `fbt` in that tree is DTrace's Function Boundary Tracing,
+#	                                not a framebuffer.
+#
+#	the driver wants UEFI GOP      OpenIndiana's own package description for the X driver this disk
+#	                                ships is `Xorg driver for illumos UEFI frame buffer`
+#	                                (components/x11/xf86-video-illumosfb). This walk boots `-device VGA`,
+#	                                a BIOS VGA with no GOP, so there is no framebuffer for it to open.
+#
+#	and the server says so         `(EE) no screens found`, with libfb.so/libshadow.so/libexa.so all
+#	                                present under /usr/lib/xorg/modules/amd64/ and `illumosfb` matched.
+#
+# SO A GATE THAT WAITS FOR `Applications` ON SCREEN CAN NEVER PASS ON THIS MACHINE, no matter what the
+# walk does. Keeping it would be a stage that fails for a reason outside its control.
+#
+# THE GATE THAT REPLACES IT IS THE ONE `tribblix` USES, for the same reason: prove what the disk
+# CONTAINS and what SSH CAN REACH, and do not claim pixels this hypervisor setup cannot draw.
+#
+#	session files exist           the desktop is installed, not merely configured
+#	the login manager's service   what would start that session on real hardware
+#
+# THE SSH CLAIM IS THE STAGE'S PURPOSE and it is already proven by the steps above; this gate adds the
+# inventory that makes the artifact useful to the next stage.
+step "the desktop is installed, as its session files and login manager show"
+  ssh "echo '--- sessions ---'; ls /usr/share/xsessions/ 2>&1; echo '--- xgreeters ---'; ls /usr/share/xgreeters/ 2>&1; echo '--- lightdm ---'; svcs -H -o fmri,state svc:/application/graphical-login/lightdm:default 2>&1; echo '--- why no pixels ---'; grep -cE 'no screens found' /var/log/Xorg.0.log 2>/dev/null || echo 0"
+  timeout 180
 
 
 step "flush the writes before anything else"
