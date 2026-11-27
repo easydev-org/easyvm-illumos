@@ -193,9 +193,9 @@ step "the shell is a root prompt"
 #
 # OmniOS runs NWAM by default and `ipadm create-addr` is a no-op while it owns the link - the same
 # measurement that took four SmartOS runs to find. The console is a root shell here, so all three steps
-# can be typed at once and read back from the screen.
+# can be typed at once and read back from the SERIAL LOG, not the screen.
 step "take the link from NWAM and give it an address"
-  input text "L=$(dladm show-link -p -o link | head -1); netadm disable -p ncu -n $L; ipadm create-if $L; ipadm create-addr -T dhcp $L/v4; ipadm show-addr"
+  input text "L=$(dladm show-link -p -o link | head -1); echo LINK=$L; svcadm disable -s svc:/network/physical:nwam 2>&1; svcadm enable -s svc:/network/dhcp/client 2>&1 || svcadm enable -s svc:/network/dhcp-client 2>&1; ipadm create-if $L 2>&1; ipadm create-addr -T dhcp $L/v4 2>&1; sleep 5; ipadm show-addr 2>&1; echo ADDR_DONE"
   settle 3
 
 
@@ -204,23 +204,29 @@ step "run it"
   settle 25
 
 
-step "the address is on the console"
-  repeat
-    do
-      item
-        settle 5
-      item "read the screen"
-        read
-          name addr
-    until
-      bind up
-      source addr
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      scale 1
-      words [[inet], [ok]]
-    max 30
+# THE CONSOLE IS THE SERIAL LINE, SO THE ANSWER IS READ FROM THE SERIAL LOG AND NOT THE SCREEN.
+#
+# MEASURED on run 45979012170: this gate retried thirty times and every frame it read was the SAME
+# KERNEL BANNER:
+#
+#	see: 92 word(s): OmniOS r151060 Version omnios-r151060-513bc64de92 64-bit ...
+#	[until]: __until__ = false (none of "inet" or "ok" in "OmniOS r151060 Version ...")
+#
+# THE VGA NEVER SHOWED THE SHELL. On this disk the console login is on the SERIAL line - `smoke.walk`
+# reads `omnios console login:` there - while the framebuffer keeps the last thing the kernel drew on it.
+# So a screen read can only ever see that banner, however long it waits.
+#
+# `until ... from console` reads the file the serial line is written to, which is the same channel the
+# login appeared on:
+#
+#	ipadm show-addr prints a line containing `inet` when an address exists
+#
+# THE COMMAND ALSO PRINTS `ADDR_DONE`, so a run whose `ipadm` failed is distinguishable from one that
+# never ran the command at all.
+step "the address is on the serial line"
+  until "ADDR_DONE"
+  from console
+  timeout 180
 
 
 step "wait for sshd"
