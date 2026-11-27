@@ -319,7 +319,7 @@ step "run it"
 #
 # THAT IS WHAT `answers.json`'s `admin_ip: dhcp` WOULD HAVE PRODUCED, written down instead of negotiated.
 step "find the DHCP service, start it, and ask for a fresh address"
-  input text "{ L=$(dladm show-link -p -o link | head -1); echo LINK=$L; ifconfig $L plumb 172.30.0.2 netmask 255.255.255.0 up 2>&1; ifconfig $L | head -6; echo ---CHECK---; ifconfig -a | grep 172.30.0.2; } > /dev/term/a 2>&1; echo NET_ADDR_DONE"
+  input text "L=$(dladm show-link -p -o link | head -1); echo LINK=$L > /dev/term/a; ifconfig $L plumb 172.30.0.2 netmask 255.255.255.0 up >> /dev/term/a 2>&1; ifconfig $L >> /dev/term/a 2>&1; echo NET_ADDR_DONE >> /dev/term/a; echo NET_ADDR_DONE"
   settle 3
 
 
