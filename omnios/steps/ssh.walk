@@ -124,15 +124,45 @@ step "the menu has been drawn"
 # `[Esc]ape` in the row list is a destination, and the loader behind it takes `-s` as a kernel argument.
 # Every earlier attempt at `esc` failed for a different reason than this one will: it was sent before the
 # menu had been drawn, and the gate above now proves the menu is there first.
-step "go to the loader prompt through the menu's own row 3"
+# THE LOADER PROMPT HAS TO ANSWER BEFORE `-s` IS TYPED AT IT.
+#
+# MEASURED on run 45969261272 - the commit that added `esc` + `-s` + Return as one `do` block. Its own
+# key log:
+#
+#	key esc
+#	typed 2 character(s)      <- "-s", eight seconds after esc
+#	key ret
+#
+# and the frame that followed was still the boot menu (`1. Boot Multi User [Enter] 2. Boot Single...`),
+# with the next one a normal boot. EIGHT SECONDS IS NOT ENOUGH FOR THIS LOADER TO PRESENT `ok`, so `-s`
+# went into whatever was on screen and Return took the default row.
+#
+# SO THE PROMPT IS WAITED FOR, AND THE SAME GATE THAT WORKS ELSEWHERE IS USED: `until ... from console`
+# reads the serial file, which is where this loader writes. `install.walk` already relies on that
+# channel on this medium (`until "Loading /local/answers.json" from console`).
+#
+# THE SEQUENCE IS THEN THREE STEPS, EACH WAITING FOR THE ONE BEFORE:
+#
+#	esc                              leave the menu for the loader
+#	until "ok" from console          the loader has finished and is asking
+#	-s, Return                       single user
+step "leave the menu for the loader"
+  input esc
+  settle 3
+
+
+step "the loader prompt is answering"
+  until "ok"
+  from console
+  timeout 120
+
+
+step "ask for single user"
   do
-    item "escape"
-      input esc
-      settle 8
-    item "type the single-user flag at the loader prompt"
+    item "type the flag"
       input text "-s"
       settle 2
-    item "boot"
+    item "boot it"
       input ret
       settle 15
 
