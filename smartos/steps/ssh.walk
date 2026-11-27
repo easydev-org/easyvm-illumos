@@ -1,0 +1,181 @@
+# SMARTOS 20261121 - sshd, and the platform image the install left behind.
+#
+# THIS IS THE STAGE THE INSTALL LEG CANNOT ANSWER: does the published disk reach a shell over the
+# NETWORK? `smoke.walk` proves the console login, which is a different claim.
+#
+# ROOT IS A REAL ACCOUNT HERE, AND ITS PASSWORD IS THE ANSWER FILE'S. `smartos/media/answers.json`
+# carries `"root_password": "admin"`, the installer applies it, and `install.walk` logs in with it at
+# the console after the reboot - so this stage does not have to invent one. THAT IS THE SAME HOOK
+# `install.walk` USES, and reusing it is why this file has no password-setting step.
+#
+# SSHD IS NOT ENABLED BY THE INSTALLER. SmartOS ships `svc:/network/ssh:default` disabled on a fresh
+# platform image, so the first half of this walk is a CONSOLE session that enables it - the network is
+# what ssh needs, so that half cannot be done over ssh.
+#
+# THE CONSOLE IS `/dev/term/b` ON THIS GUEST (the smoke gate's own words), which is why the VGA device
+# stays 1024x768 and the reads below use that rectangle: a larger framebuffer changes nothing the walk
+# looks at, and the serial line is the one that carries the login prompt.
+walkthrough "smartos 20261121 - sshd, and the platform image the install left behind"
+resolution 1024x768
+recording_resolution 1024x768
+var out
+  default out/smartos-ssh.qcow2
+  from args.out
+password admin
+user root
+var user
+  default root
+  from args.user
+ssh_port 2222
+
+
+step "boot the published disk"
+  boot
+    machine "q35,accel=kvm,vmport=off"
+    args [["-cpu", "Skylake-Client-v4"], ["-smp", "4"], ["-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd"], ["-drive", "if=pflash,format=raw,file=OVMF_VARS.fd"], ["-m", "6144"], ["-chardev", "socket,id=qga0,path=qga.sock,server=on,wait=off"], ["-device", "isa-serial,chardev=qga0"], ["-device", "VGA,xres=1024,yres=768"], ["-device", "qemu-xhci,id=xhci"], ["-device", "usb-tablet,bus=xhci.0"], ["-device", "usb-kbd,bus=xhci.0"], ["-drive", "file=disk.qcow2,if=none,format=qcow2,discard=unmap,id=target"], ["-device", "virtio-blk-pci,drive=target,bootindex=0"], ["-netdev", "tap,id=net0,ifname=qemutap0,script=no,downscript=no"], ["-device", "virtio-net-pci,netdev=net0,mac=52:54:00:56:4d:04,romfile=,host_mtu=1450"]]
+    timeout 900
+
+
+step "the console login prompt is up"
+  repeat
+    do
+      item
+        settle 15
+      item "read the console"
+        read
+          name login
+    until
+      bind up
+      source login
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[uscons, login], [login:]]
+    max 60
+
+
+step "log in at the console as root"
+  input text "{{ user }}"
+  settle 2
+
+
+step "take the login name"
+  input ret
+  settle 6
+
+
+step "type root's password, which the answer file set"
+  input text "{{ password }}"
+  settle 2
+
+
+step "take the password"
+  input ret
+  settle 8
+
+
+step "the shell is a root prompt"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name sh
+    until
+      bind up
+      source sh
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      without [password]
+      words [[root@], [#]]
+    max 30
+
+
+step "enable sshd, which a fresh platform image ships disabled"
+  input text "svcadm enable -s svc:/network/ssh:default"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 8
+
+
+step "prove it came online"
+  input text "svcs -H -o state svc:/network/ssh:default"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 6
+
+
+step "allow root to log in over the network, which is not the console"
+  input text "sed -i '' 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config; grep -c '^PermitRootLogin yes' /etc/ssh/sshd_config"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 8
+
+
+step "restart sshd so the directive is read"
+  input text "svcadm restart svc:/network/ssh:default"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 10
+
+
+step "bring the interface up, which the install configured nothing for"
+  input text "ipadm show-addr net0/v4 2>/dev/null || ipadm create-addr -T dhcp net0/v4; ipadm show-addr"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 20
+
+
+step "wait for sshd"
+  repeat
+    until machine_ssh
+    max 90
+    pause 10
+
+
+step "prove the kernel over ssh"
+  ssh "uname -a"
+
+
+step "prove the account over ssh"
+  ssh "id -un"
+
+
+step "prove the root pool is the one that was installed"
+  ssh "zpool list -H -o name,health"
+
+
+step "flush the writes before the machine stops"
+  ssh "sync"
+
+
+step "shut the machine down"
+  ssh "shutdown -i 0 -g 0 -y"
+
+
+step "wait for the machine to stop"
+  wait_until stopped
+  timeout 300
+
+
+step "publish the disk"
+    save "{{ out }}"

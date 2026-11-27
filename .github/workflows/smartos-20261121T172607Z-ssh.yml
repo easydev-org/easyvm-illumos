@@ -1,0 +1,59 @@
+name: smartos
+
+# SMARTOS, AS ITS OWN STAGE. `smartos/steps/ssh.walk` IS THE STAGE `smoke.walk` CANNOT BE.
+#
+# `smoke.walk` proves the console login appears, which is a claim about the kernel mounting its pool
+# and starting the console service. THIS PROVES THE NETWORK: sshd answering, root authenticating over
+# it, and the root pool still healthy on the disk that was published - so the artifact a later stage
+# pulls is a machine somebody can actually log in to.
+#
+# THE SHAPE IS `tribblix-0m41.1-ssh.yml`'s, for the reason that file gives: a leg that asks for a tag
+# the leg before it publishes gets a 404 while that leg is still running, then falls back to the
+# INSTALL disk and burns its budget on a machine with no sshd. `pull:` is the dependency.
+#
+# SMARTOS IS A SERVER SYSTEM AND HAS NO DESKTOP - measured, and `README.md` says why: pkgsrc carries
+# xfce4-session and modular-xorg-server but NO display manager at all, and a desktop belongs nowhere
+# near a hypervisor's global zone. So this walk has no screen gate, and its last act is a clean
+# `shutdown -i 0 -g 0 -y` so the platform's own state is written rather than killed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      disks_repository:
+        description: "the ghcr repository that holds the disks"
+        default: "easydev-org/easyvm-solaris"
+      from_tag:
+        description: >-
+          the PUBLISHED disk this stage continues from (default smartos-install)
+        default: "smartos-install"
+
+concurrency:
+  group: smartos-ssh
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  checks: write
+
+jobs:
+  ssh:
+    uses: easydev-org/easyvm/.github/workflows/stage.yml@v0.0.4
+    secrets: inherit
+    with:
+      image_repository: easydev-org/easyvm
+      image_tag: v0.0.4
+      disk_gb: "20"
+      group: smartos-ssh
+      disks_repository: ${{ inputs.disks_repository }}
+      stages: |
+        [
+          {
+            "name": "smartos-ssh",
+            "file": "smartos/steps/ssh.walk",
+            "pull": "${{ inputs.from_tag }}",
+            "out": "smartos-ssh.qcow2",
+            "publish": "smartos-ssh",
+            "timeout": 240
+          }
+        ]
