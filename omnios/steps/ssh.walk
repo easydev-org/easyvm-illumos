@@ -223,10 +223,48 @@ step "run it"
 #
 # THE COMMAND ALSO PRINTS `ADDR_DONE`, so a run whose `ipadm` failed is distinguishable from one that
 # never ran the command at all.
-step "the address is on the serial line"
-  until "ADDR_DONE"
-  from console
-  timeout 180
+# THE CONSOLE HERE IS THE FRAMEBUFFER, NOT THE SERIAL LINE - THE OPPOSITE OF SMARTO S.
+#
+# MEASURED on run 45982744155, whose failure message quotes the whole serial file:
+#
+#	never saw "ADDR_DONE" in console.log within 3m0s; the console ends with:
+#	BdsDxe: starting Boot0002 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x3,0x0)
+#	[0m[2J[001;001H[001;001H
+#
+# - THE SERIAL FILE STOPS AT THE FIRMWARE. Everything after that is terminal control codes, so OmniOS
+# keeps its console on the VGA/VESA device and writes nothing to the serial line at all.
+#
+# AND `smoke.walk` PROVES WHICH CHANNEL WORKS: `the installed system is up` reads
+# `omnios console login:` with a SCREEN read, on this same disk.
+#
+# SO THE ANSWER IS READ OFF THE SCREEN - WITH ONE ADDITION THAT THE EARLIER ATTEMPT DID NOT HAVE:
+# A RETURN IS SENT FIRST. THE FRAME THE LAST RUN READ WAS THE KERNEL BANNER ON EVERY ATTEMPT, which is
+# what a framebuffer shows when the console has written nothing yet; pressing Return makes the shell
+# emit its prompt and the command's output.
+step "wake the console, then read the address off the screen"
+  do
+    item "press Return, so the shell writes to the framebuffer"
+      input ret
+      settle 3
+
+
+step "the address is on the screen"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name addr
+    until
+      bind up
+      source addr
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[ADDR_DONE], [inet]]
+    max 40
 
 
 step "wait for sshd"
