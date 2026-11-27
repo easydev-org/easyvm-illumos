@@ -196,26 +196,40 @@ step "run it"
   settle 10
 
 
-# THE REBOOT LANDS ON OMNIO S'S OWN BOOT MENU, AND NOTHING BOOTS UNTIL SOMEBODY CHOOSES.
+# THE REBOOT LANDS ON OMNIO S'S OWN BOOT MENU, AND A RETURN SENT TOO EARLY IS LOST.
 #
-# MEASURED on run 45948030400, step 21/29 - the wait for sshd ran its whole budget with the host
-# answering `dial tcp 172.30.0.1:2222: connect: no route to host`, and the frame it was reading said:
+# MEASURED TWICE. Run 45948030400 waited its whole budget with `connect: no route to host`; run
+# 45950643255 got further - the host reported `ssh_ready="false" present=true`, so an address WAS
+# assigned - but the frame it read for twenty minutes was still
 #
 #	Welcome to OmniOS
 #	1. Boot Multi User [Enter]      2. Boot Single User ...
 #
-# SO A RETURN IS SENT TO TAKE ROW 1, WHICH IS `Multi User` AND IS WHAT SSHD NEEDS. Without it the
-# guest sits at its own menu for ever, which is exactly the twenty minutes this run spent.
-step "take multi user at the boot menu"
-  input ret
-  settle 15
-
-
-# AND THE MENU CAN APPEAR TWICE - once for the loader and once for the OS's own boot menu - so a
-# second Return is sent. On a guest that has already booted it lands harmlessly at the login prompt.
-step "and again, if the boot menu asked twice"
-  input ret
-  settle 15
+# THE TWO RETURNS `174ff00` ADDED WERE SENT DURING `settle 10`, BEFORE THE MENU WAS DRAWN, so the
+# kernel was still shutting down and they went nowhere. THE LESSON: A KEY MUST FOLLOW THE SCREEN
+# IT IS MEANT FOR.
+#
+# SO THE MENU IS WAITED FOR FIRST, and the Return is sent only once its own words are on screen. The
+# menu is drawn again after each keystroke, hence the loop: it reads, presses, and stops as soon as the
+# menu is gone.
+step "wait for the boot menu, then take row 1 until it is gone"
+  repeat
+    do
+      item "read the screen"
+        read
+          name menu
+      item "take multi user"
+        input ret
+        settle 8
+    until
+      bind gone
+      source menu
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      without [Boot, Multi, User]
+    max 40
 
 
 step "wait for sshd"
