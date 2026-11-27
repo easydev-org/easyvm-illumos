@@ -195,7 +195,7 @@ step "the shell is a root prompt"
 # measurement that took four SmartOS runs to find. The console is a root shell here, so all three steps
 # can be typed at once and read back from the SERIAL LOG, not the screen.
 step "take the link from NWAM and give it an address"
-  input text "L=$(dladm show-link -p -o link | head -1); echo LINK=$L; svcadm disable -s svc:/network/physical:nwam 2>&1; svcadm enable -s svc:/network/dhcp/client 2>&1 || svcadm enable -s svc:/network/dhcp-client 2>&1; ipadm create-if $L 2>&1; ipadm create-addr -T dhcp $L/v4 2>&1; sleep 5; ipadm show-addr 2>&1; echo ADDR_DONE"
+  input text "L=$(dladm show-link -p -o link | head -1); echo LINK=$L; ipadm delete-addr $L/v4 2>&1; ipadm create-addr -T static -a 172.30.0.2/24 $L/v4 2>&1; ipadm show-addr $L/v4 2>&1; if ipadm show-addr $L/v4 2>/dev/null | grep -q \"inet \"; then echo ADDR_OK; else echo ADDR_FAILED; fi"
   settle 3
 
 
@@ -221,8 +221,9 @@ step "run it"
 #
 #	ipadm show-addr prints a line containing `inet` when an address exists
 #
-# THE COMMAND ALSO PRINTS `ADDR_DONE`, so a run whose `ipadm` failed is distinguishable from one that
-# never ran the command at all.
+# THE COMMAND PRINTS `ADDR_OK` ONLY WHEN `ipadm show-addr` CONTAINS `inet `, and `ADDR_FAILED`
+# otherwise - so this gate can no longer be satisfied by a command that ran and configured nothing,
+# which is exactly the failure that consumed the previous run.
 # THE CONSOLE HERE IS THE FRAMEBUFFER, NOT THE SERIAL LINE - THE OPPOSITE OF SMARTO S.
 #
 # MEASURED on run 45982744155, whose failure message quotes the whole serial file:
@@ -263,7 +264,7 @@ step "the address is on the screen"
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
       scale 1
-      words [[ADDR_DONE], [inet]]
+      words [[ADDR_OK]]
     max 40
 
 
