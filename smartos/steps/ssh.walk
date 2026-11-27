@@ -373,8 +373,28 @@ step "flush the writes before the machine stops"
   ssh "sync"
 
 
+# `shutdown -i 0` REACHES init STATE 0 AND STOPS THERE - IT DOES NOT POWER THE MACHINE OFF.
+#
+# MEASURED on run 45996053755, whose ssh work was COMPLETE and whose console said:
+#
+#	Shutdown started.    November 27, 2026 at 12:19:24 PM UTC
+#	Changing to init state 0 - please wait
+#
+# and then, five minutes later:
+#
+#	=== wait for the machine to stop
+#	  ssh probe: dial tcp 172.30.0.1:2222: connect: connection refused   <- sshd gone, so init reached 0
+#	  error: wait_until: stopped was never satisfied within 5m0s: the machine is still running
+#
+# Init state 0 halts the OS but qemu keeps the process alive, so `wait_until stopped` can never hold -
+# and the published disk was thrown away after all the stage's work had already succeeded.
+#
+# `stop ssh` IS WHAT THE TWO ILLUMOS STAGES THAT PUBLISH ALREADY USE (tribblix, openindiana): the engine
+# runs its own shutdown over ssh and then waits for qemu itself, which is a fact about the PROCESS rather
+# than about the guest's init state.
 step "shut the machine down"
-  ssh "shutdown -i 0 -g 0 -y"
+  stop ssh
+  timeout 300
 
 
 step "wait for the machine to stop"
