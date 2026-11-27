@@ -103,14 +103,38 @@ step "the menu has been drawn"
     max 40
 
 
-step "take row 2, now that it is on screen"
+# THIS MENU'S NUMBERS ARE LABELS, NOT KEYS. `2` AND `down` WERE BOTH MEASURED AND BOTH IGNORED.
+#
+# MEASURED on run 45965779646 - the run whose gate finally saw the menu, then pressed `2`:
+#
+#	=== the menu has been drawn
+#	  [until]: __until__ = true (read "Multi User")      the menu WAS on screen this time
+#	=== take row 2, now that it is on screen
+#	  typed 1 character(s)
+#	  key ret
+#	-> OmniOS r151060 Version omnios-r151060-513bc64de92 64-bit      A NORMAL BOOT
+#
+# AND `down` WAS MEASURED THE SAME WAY IN AN EARLIER COMMIT (`042a7a8`: `key down`, `key ret`, normal
+# boot). The menu's own footer explains it:
+#
+#	1. Boot Multi User [Enter]
+#	   ^^^^^^^^^^^^^^^^  `[Enter]` marks the DEFAULT ROW, not a number to type
+#
+# SO THE ONLY CONTROL THIS MENU HONOURS IS ROW 3 - `Escape to loader prompt` - AND `-s` AT THAT PROMPT.
+# `[Esc]ape` in the row list is a destination, and the loader behind it takes `-s` as a kernel argument.
+# Every earlier attempt at `esc` failed for a different reason than this one will: it was sent before the
+# menu had been drawn, and the gate above now proves the menu is there first.
+step "go to the loader prompt through the menu's own row 3"
   do
-    item "type the row number"
-      input text "2"
+    item "escape"
+      input esc
+      settle 8
+    item "type the single-user flag at the loader prompt"
+      input text "-s"
       settle 2
-    item "take it"
+    item "boot"
       input ret
-      settle 10
+      settle 15
 
 
 step "the single-user shell is up"
