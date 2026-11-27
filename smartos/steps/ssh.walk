@@ -189,6 +189,47 @@ step "run it"
 # IF SSHD STILL DOES NOT ANSWER, THE NEXT RUN'S `wait for sshd` BUDGET IS THE DIAGNOSIS: a `no route to
 # host` means no address, and a `connection refused` means an address with sshd down. Those two are
 # different repairs and the host already prints which one it was.
+# THE ADDRESS IS CONFIGURED HERE AND PROVEN THROUGH THE SERIAL LOG, NOT THROUGH OCR.
+#
+# TWO MEASUREMENTS SAY NWAM ALONE IS NOT ENOUGH AND OCR CANNOT SHOW IT EITHER WAY:
+#
+#	run 45966722491   `host diag [ip neigh]: 172.30.0.2 dev qemubr0 FAILED`
+#	                  `host diag [icmp guest]: try1: timed out`
+#	                  -> NO ADDRESS AT ALL, not `connection refused`
+#
+#	every run         `see: 49 word(s): IKON EALALADN ... WN PALL ALN` - the console's own text
+#	                  never reached the screen reader, with `clear` and without it
+#
+# `answers.json` IS NOT WHAT CONFIGURES THE INSTALLED SYSTEM. `admin_ip: dhcp` is the value the
+# INSTALLER's headnode used while it ran; it is not a promise about the first boot of the installed
+# disk, and the FAILED neighbour above is what that looks like.
+#
+# SO THE INTERFACE IS CONFIGURED ONCE, HERE, AND THE PROOF COMES FROM THE SERIAL LOG:
+#
+#	`until ... from console` reads the serial file the machine writes its console to - the same
+#	channel `install.walk` uses (`until "Loading /local/answers.json" from console`), and one that
+#	cannot be defeated by a screen reader that never decoded this console's characters.
+#
+# THE COMMAND PRINTS A LINE ONLY WHEN IT HAS SUCCEEDED, so the wait has something true to look for:
+#
+#	L=$(dladm show-link -p -o link | head -1); ipadm create-if $L; ipadm create-addr -T dhcp $L/v4
+#	echo NET_STATIC_ADDR_OK $L
+step "give the interface an address"
+  input text "L=$(dladm show-link -p -o link | head -1); ipadm create-if $L 2>/dev/null; ipadm create-addr -T dhcp $L/v4 2>/dev/null; echo NET_STATIC_ADDR_OK $L; ipadm show-addr"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 20
+
+
+step "the address exists, as the serial log reports it"
+  until "NET_STATIC_ADDR_OK"
+  from console
+  timeout 180
+
+
 step "wait for sshd"
   repeat
     until machine_ssh
