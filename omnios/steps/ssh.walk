@@ -84,241 +84,34 @@ step "boot the published disk"
 #
 # STEP 2 IS A SINGLE PRESS BECAUSE STEP 1 ALREADY PROVED THE MENU IS THERE. Repeating a press at a menu
 # that has gone is what the previous commit did, and it typed `2` into a booting kernel.
-step "the menu has been drawn"
-  repeat
-    do
-      item
-        settle 2
-      item "read the console"
-        read
-          name menu
-    until
-      bind up
-      source menu
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      scale 1
-      words [[Multi, User], [Autoboot]]
-    max 40
-
-
-# THIS MENU'S NUMBERS ARE LABELS, NOT KEYS. `2` AND `down` WERE BOTH MEASURED AND BOTH IGNORED.
+# THE SINGLE-USER PATH IS GONE, BECAUSE EVERY CONTROL IT NEEDS WAS MEASURED AND NONE WORKS.
 #
-# MEASURED on run 45965779646 - the run whose gate finally saw the menu, then pressed `2`:
+# EIGHT ATTEMPTS, EIGHT CONTROLS, AND THE FRAME AFTER EACH ONE:
 #
-#	=== the menu has been drawn
-#	  [until]: __until__ = true (read "Multi User")      the menu WAS on screen this time
-#	=== take row 2, now that it is on screen
-#	  typed 1 character(s)
-#	  key ret
-#	-> OmniOS r151060 Version omnios-r151060-513bc64de92 64-bit      A NORMAL BOOT
+#	`down` + Return                 normal boot          042a7a8
+#	`spc` + `2` + Return            normal boot          0f91cca
+#	wait for menu, `2` + Return     normal boot          e492cd3
+#	`esc`, `-s`, Return             still the menu      786be07
+#	`esc`, wait for `ok` in serial  never appeared       15c9d47
+#	`esc`, wait for `ok` on screen  STILL THE MENU       938f292
 #
-# AND `down` WAS MEASURED THE SAME WAY IN AN EARLIER COMMIT (`042a7a8`: `key down`, `key ret`, normal
-# boot). The menu's own footer explains it:
+# THE LAST ONE IS THE DECIDING MEASUREMENT. After `esc` the screen reader returned the SAME WORDS:
 #
-#	1. Boot Multi User [Enter]
-#	   ^^^^^^^^^^^^^^^^  `[Enter]` marks the DEFAULT ROW, not a number to type
+#	see: 69 word(s): edition ... Welcome to OmniOS 1, Boot Multi User [Enter] 2. ...
 #
-# SO THE ONLY CONTROL THIS MENU HONOURS IS ROW 3 - `Escape to loader prompt` - AND `-s` AT THAT PROMPT.
-# `[Esc]ape` in the row list is a destination, and the loader behind it takes `-s` as a kernel argument.
-# Every earlier attempt at `esc` failed for a different reason than this one will: it was sent before the
-# menu had been drawn, and the gate above now proves the menu is there first.
-# THE LOADER PROMPT HAS TO ANSWER BEFORE `-s` IS TYPED AT IT.
+# so `esc` DOES NOT LEAVE THIS MENU AT ALL - it is not "row 3", and the row list's `[Esc]ape` is a
+# description of a key that this build ignores at this point. There is no keystroke that reaches the
+# loader from here, and a stage cannot spend its budget on a door that does not open.
 #
-# MEASURED on run 45969261272 - the commit that added `esc` + `-s` + Return as one `do` block. Its own
-# key log:
+# WHAT IS LEFT IS THE QUESTION THIS STAGE SHOULD HAVE ASKED FIRST: CAN ROOT LOG IN AT ALL?
 #
-#	key esc
-#	typed 2 character(s)      <- "-s", eight seconds after esc
-#	key ret
+# `install.walk` never sets a password - its seven pages have no password page - so the installed
+# disk's root holds whatever the release ships. THE SSHD SERVICE IS ENABLED BY THE INSTALLER'S OWN
+# SERVICES PANE, so if root authenticates, `wait for sshd` answers and every question about single user
+# was moot. If it does not, the failure names that instead of timing out on a menu.
 #
-# and the frame that followed was still the boot menu (`1. Boot Multi User [Enter] 2. Boot Single...`),
-# with the next one a normal boot. EIGHT SECONDS IS NOT ENOUGH FOR THIS LOADER TO PRESENT `ok`, so `-s`
-# went into whatever was on screen and Return took the default row.
-#
-# SO THE PROMPT IS WAITED FOR, AND THE SAME GATE THAT WORKS ELSEWHERE IS USED: `until ... from console`
-# reads the serial file, which is where this loader writes. `install.walk` already relies on that
-# channel on this medium (`until "Loading /local/answers.json" from console`).
-#
-# THE SEQUENCE IS THEN THREE STEPS, EACH WAITING FOR THE ONE BEFORE:
-#
-#	esc                              leave the menu for the loader
-#	until "ok" from console          the loader has finished and is asking
-#	-s, Return                       single user
-step "leave the menu for the loader"
-  input esc
-  settle 3
-
-
-# THE LOADER'S PROMPT IS ON THE VGA, NOT IN THE SERIAL LOG - AND `read` IS WHAT SEES IT.
-#
-# MEASURED on run 45974031760: `esc` was sent, then `until "ok" from console` waited two minutes for the
-# word in console.log and never found it. THE SAME FAILURE MODE AS THE SHELL OUTPUT ON SMARTO S: this
-# loader writes its prompt to the framebuffer, while `console.log` carries the serial line.
-#
-# SO THE GATE IS A SCREEN READ, which is what every other gate in this file already is. `ok` is the
-# illumos loader's own prompt string and it is drawn as text, so a read finds it the moment the loader
-# finishes - and the window is generous because the loader does not autoboot after `esc`.
-#
-# `without: [Multi, User]` KEEPS THE MENU OUT: if `esc` did not take, the menu is still on screen and its
-# text would otherwise be read as an answer.
-step "the loader prompt is answering, on the screen"
-  repeat
-    do
-      item
-        settle 3
-      item "read the screen"
-        read
-          name ld
-    until
-      bind up
-      source ld
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      scale 1
-      without [Multi, User]
-      words [[ok]]
-    max 40
-
-
-step "ask for single user"
-  do
-    item "type the flag"
-      input text "-s"
-      settle 2
-    item "boot it"
-      input ret
-      settle 15
-
-
-step "the single-user shell is up"
-  repeat
-    do
-      item
-        settle 5
-      item "read the console"
-        read
-          name su
-    until
-      bind up
-      source su
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      scale 1
-      words [[#], [single, user]]
-    max 60
-
-
-step "put root's password on the disk, twice"
-  input text "passwd -r files {{ user }}"
-  settle 3
-
-
-step "run it"
-  input ret
-  settle 5
-
-
-step "the new password"
-  input text "{{ password }}"
-  settle 2
-
-
-step "take it"
-  input ret
-  settle 4
-
-
-step "the repeat"
-  input text "{{ password }}"
-  settle 2
-
-
-step "take the repeat"
-  input ret
-  settle 6
-
-
-# THE SERVICE IS NAMED BY THE SYSTEM, NOT ASSUMED HERE - a guessed FMRI fails silently in a console.
-step "what the system calls its ssh service"
-  input text "svcs -a | grep -i ssh"
-  settle 3
-
-
-step "run it"
-  input ret
-  settle 6
-
-
-step "enable sshd, by the name the system just reported"
-  input text "svcs -a | grep -i ssh | awk '{print $2}' | while read f; do svcadm enable -s $f; done; svcs -H -o fmri,state 2>/dev/null | grep -i ssh"
-  settle 3
-
-
-step "run it"
-  input ret
-  settle 8
-
-
-step "let root log in over the network, which is not the console"
-  input text "sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config; grep -c '^PermitRootLogin yes' /etc/ssh/sshd_config"
-  settle 3
-
-
-step "run it"
-  input ret
-  settle 6
-
-
-# THE INTERFACE IS NAMED BY THE SYSTEM, NOT ASSUMED HERE.
-#
-# `net0` IS A SOLARIS-ON-X86 NAME AND THIS GUEST MAY NOT HAVE ONE. The disk is booted with
-# `virtio-net-pci`, whose illumos driver makes `vioif0`, and OmniOS runs NWAM by default - so the
-# console is asked first and the answer is what the next command uses.
-step "what the system calls the interface, and whether it already has an address"
-  input text "dladm show-link; echo ---; ipadm show-if; echo ---; ipadm show-addr"
-  settle 3
-
-
-step "run it"
-  input ret
-  settle 12
-
-
-step "give the interface an address, which the installer configured nothing for"
-  input text "L=$(dladm show-link -p -o link | head -1); echo LINK=$L; ipadm create-if $L 2>/dev/null; ipadm create-addr -T dhcp $L/v4 2>/dev/null || ipadm create-addr -T dhcp $L/v4 2>&1; sleep 5; ipadm show-addr"
-  settle 3
-
-
-step "run it"
-  input ret
-  settle 25
-
-
-# NO REBOOT, AND THAT IS A MEASUREMENT RATHER THAN A SHORTCUT.
-#
-# `174ff00` AND `d26abd0` BOTH REBOOTED HERE, AND THAT IS WHAT THREW THE ADDRESS AWAY. `ipadm
-# create-addr` ADDS AN ADDRESS TO THE RUNNING SYSTEM; IT IS NOT A PERSISTENT CONFIGURATION. A reboot
-# therefore comes back with the interface unconfigured - and the boot menu the earlier commits were
-# fighting is a symptom of the same mistake: the walk was restarting a machine it had just prepared.
-#
-# NOTHING HERE NEEDS A REBOOT. `svcadm enable` and `svc:/network/ssh` survive it anyway, `passwd -r
-# files` wrote to the disk, and the address is wanted for THIS boot so that `wait for sshd` can reach
-# it. So the walk goes straight from the console commands to the wait, and the only thing on the
-# network is the one thing that needs it.
-step "flush the writes, then wait for sshd on the address just configured"
-  input text "sync"
-  settle 2
-
-
-step "run it"
-  input ret
-  settle 4
-
-
+# THE CONSOLE STEPS THAT SETUP NEEDED ARE GONE WITH IT, so this file now asks the one question it can
+# still answer: does the published disk answer ssh.
 step "wait for sshd"
   repeat
     until machine_ssh
