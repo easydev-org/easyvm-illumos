@@ -279,8 +279,27 @@ step "run it"
 #	   command was retried.
 #
 # EVERY LINE STILL PRINTS TO /dev/term/a, so the next failure names the step that failed.
-step "stop NWAM, start the DHCP agent, then ask for an address"
-  input text "{ echo LINK=$(dladm show-link -p -o link | head -1); svcadm disable -s svc:/network/physical:nwam 2>&1; svcadm enable -s svc:/network/dhcp/client 2>&1 || svcadm enable -s svc:/network/dhcp-client 2>&1; ipadm create-if $(dladm show-link -p -o link | head -1) 2>&1; ipadm create-addr -T dhcp $(dladm show-link -p -o link | head -1)/v4 2>&1; sleep 5; ipadm show-addr 2>&1; } > /dev/term/a 2>&1; echo NET_STATIC_ADDR_OK"
+# THE SERVICE IS FOUND BY NAME, NOT GUESSED - BOTH GUESSES WERE REJECTED BY THE SYSTEM.
+#
+# MEASURED on run 45980637789, whose /dev/term/a output says which name it tried and what happened:
+#
+#	svcadm: Pattern 'svc:/network/dhcp/client' doesn't match any instances
+#	svcadm: Pattern 'svc:/network/dhcp-client' doesn't match any instances
+#	ipadm: warning: Communication with dhcpagent timed out
+#	vioif0/v4    dhcp    ok    ?          <- the address OBJECT exists, the lease never arrived
+#	inet 127.0.0.1/8 ...                  <- and only loopback has an address
+#
+# SO NO DHCP AGENT WAS EVER STARTED, because neither name exists on this guest. `svc:/network/dhcp/
+# client` NEEDS ITS INSTANCE (`:default`) and this release may spell it differently again - so the
+# system is ASKED:
+#
+#	svcs -a | grep -i dhcp        the FMRI this guest actually has, printed for the next reader
+#	... | svcadm enable -s        and that one is started
+#
+# The address object is also DELETED first: `vioif0/v4` already exists in state `?`, and re-running
+# `create-addr` on it can never produce a lease.
+step "find the DHCP service, start it, and ask for a fresh address"
+  input text "{ echo LINK=$(dladm show-link -p -o link | head -1); svcs -a | grep -i dhcp; L=$(dladm show-link -p -o link | head -1); svcadm disable -s svc:/network/physical:nwam 2>&1; svcs -a | grep -i dhcp | awk '{print $3}' | while read f; do svcadm enable -s $f 2>&1; done; ipadm delete-addr $L/v4 2>&1; ipadm create-addr -T dhcp $L/v4 2>&1; sleep 10; ipadm show-addr 2>&1; } > /dev/term/a 2>&1; echo NET_STATIC_ADDR_OK"
   settle 3
 
 
