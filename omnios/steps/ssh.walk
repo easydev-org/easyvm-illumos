@@ -222,9 +222,20 @@ step "run it"
   settle 5
 
 
+# THE LINE IS DELETED AND RE-APPENDED, BECAUSE A `sed` REPLACEMENT WITH A SPACE IS WHAT MANGLES.
+#
+# tribblix measured the mangling on this same console: `PermitRootLogin yes` arrived as
+# `PermitRootLogin_yes`, which `sshd -t` called `no argument after keyword` - and a config sshd
+# refuses is a daemon that does not come back after the restart. A quoted `s///` replacement still
+# carries a space, so this does not use one:
+#
+#	sed -i /^PermitRootLogin/d     every live directive removed (the commented one does not match)
+#	echo PermitRootLogin yes >>    one written back, at the end, which is where sshd will read it
+#
+# and `sshd -t` in the step after this one is what proves the file survived the trip.
 step "let root log in with a password"
-  input text "sed -i \"s/^PermitRootLogin.*/PermitRootLogin yes/\" /etc/ssh/sshd_config"
-  settle 3
+  input text "sed -i /^PermitRootLogin/d /etc/ssh/sshd_config; echo PermitRootLogin yes >> /etc/ssh/sshd_config"
+  settle 4
 
 
 step "run it"
@@ -271,14 +282,67 @@ step "run it"
   settle 5
 
 
-step "restart sshd so both files are read"
-  input text "svcadm restart svc:/network/ssh; svcs -p svc:/network/ssh | tail -2; netstat -an | grep '\\.22 ' | head -2; echo SSHD_RESTARTED"
+# THE CONFIGURATION IS PARSED BEFORE THE RESTART, BECAUSE A BAD FILE IS A DEAD DAEMON.
+#
+# MEASURED on run 45998433372 - the first run that set the password and both files:
+#
+#	12:29:49.205967 172.30.0.1.56480 > 172.30.0.2.22: Flags [S]
+#	12:29:49.206178 172.30.0.2.22 > 172.30.0.1.56480: Flags [R.]     <- REFUSED
+#
+# THE PREVIOUS RUN'S pcap SHOWED `[S.]` AND A BANNER - the port was open then. After this run's
+# `svcadm restart`, 22 answered RST, which is what a host does when no socket is listening. So the
+# restart took a working sshd away and brought nothing back: sshd read the file, refused it, and SMF
+# left the service down.
+#
+# TRIBBLIX - THE ILLUMOS STAGE THAT PUBLISHES - ASKS sshd ITSELF BEFORE RESTARTING, and that is the
+# missing step here: `sshd -t` parses the whole file and exits non-zero on the first bad option.
+#
+#	sshd -t && echo SSHCONFGOOD || echo SSHCONFBAD
+#
+# The two words are the two answers, so this cannot pass on the command's own echo.
+step "check the configuration parses"
+  input text "sshd -t && echo SSHCONFGOOD || echo SSHCONFBAD"
   settle 3
 
 
 step "run it"
   input ret
-  settle 12
+  settle 8
+
+
+step "the sshd configuration is valid"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name cfg
+    until
+      bind up
+      source cfg
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[SSHCONFGOOD]]
+      without [SSHCONFBAD]
+    max 40
+
+
+# THE RESTART IS FOLLOWED BY THE SERVICE'S OWN STATE, AND `clear` IS TRIED FIRST.
+#
+# A SERVICE THAT FAILED ONCE IS IN `maintenance`, and `svcadm restart` on a service in maintenance does
+# nothing until it is cleared. The line asks SMF for the state after the attempt and prints it, so a
+# service that stayed down NAMES itself in the log instead of looking like a closed port.
+step "restart sshd so both files are read"
+  input text "svcadm clear svc:/network/ssh 2>&1; svcadm restart svc:/network/ssh 2>&1; sleep 3; echo STATE=$(svcs -H -o state svc:/network/ssh); netstat -an | grep '\\.22 ' | head -2; echo SSHD_RESTARTED"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 15
 
 
 # AND THE LINK GETS AN ADDRESS, FROM THE SAME ROOT SHELL, WITH NWAM MOVED ASIDE.
