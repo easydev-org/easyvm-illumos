@@ -73,7 +73,9 @@ step "the console login prompt is up"
       rect_at [1024, 768]
       scale 1
       words [[uscons, login], [login:]]
-    max 60
+    # SMOKE MEASURED THIS AT ROUGH SIXTY ROUNDS OF FIFTEEN SECONDS, and its own budget is 90. This
+    # stage gave it 60, which is shorter than the thing it is waiting for - so it now matches smoke.
+    max 90
 
 
 step "log in at the console as root"
