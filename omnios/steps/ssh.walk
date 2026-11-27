@@ -342,12 +342,14 @@ step "enter it again"
 # stage carried on. So the account's own database is asked whether it now holds a password hash - `*`
 # is what a locked account holds, and any other value is a real one.
 #
-#	P=$(grep root /etc/shadow | cut -d: -f2); test -n "$P" && echo PW_SET || echo PW_EMPTY
+#	passwd -s root
 #
-# and the gate waits for `PW_SET`. If it prints `PW_EMPTY`, the failure names the account rather than
-# appearing twenty minutes later as "sshd does not accept a connection".
+# `passwd -s` prints the account's STATUS as a WORD: `PS` for a set password, `LK` for locked, `NP` for
+# none. So the gate waits for `root PS` - two words, one meaning, nothing for OCR to misread as a digit
+# - and an empty account fails HERE, naming itself, instead of twenty minutes later as
+# "sshd does not accept a connection".
 step "prove root now has a password"
-  input text "P=$(grep root /etc/shadow | cut -d: -f2); test -n \"$P\" && echo PW_SET || echo PW_EMPTY"
+  input text "passwd -s root"
   settle 3
 
 
@@ -374,7 +376,7 @@ step "the account holds a password"
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
       scale 1
-      words [[PW_SET]]
+      words [[root, PS]]
     max 30
 
 
@@ -427,7 +429,7 @@ step "run it"
 
 
 step "check the configuration parses"
-  input text "sshd -t 2>/tmp/se && echo CONF_PARSES || echo CONF_BROKEN; tail -3 /tmp/se"
+  input text "sshd -t 2>/tmp/se && echo CONF_PARSES || echo CONF_BROKEN"
   settle 3
 
 
