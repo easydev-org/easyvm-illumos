@@ -135,14 +135,40 @@ step "run it"
   settle 10
 
 
-step "bring the interface up, which the install configured nothing for"
-  input text "ipadm show-addr net0/v4 2>/dev/null || ipadm create-addr -T dhcp net0/v4; ipadm show-addr"
+# THE INTERFACE IS NAMED BY THE SYSTEM, NOT ASSUMED HERE.
+#
+# `net0` IS A SOLARIS-ON-X86 NAME AND THIS GUEST MAY NOT HAVE ONE. The disk is booted with
+# `virtio-net-pci`, whose illumos driver makes `vioif0`; NWAM may also already have addressed it. So the
+# console is asked FIRST, and the answer is what the next command uses - a walk that hard-codes `net0`
+# on a guest whose interface is `vioif0` configures nothing and then waits twenty minutes for sshd.
+step "what the system calls the interface, and whether it already has an address"
+  input text "dladm show-link; echo ---; ipadm show-if; echo ---; ipadm show-addr"
   settle 3
 
 
 step "run it"
   input ret
-  settle 20
+  settle 12
+
+
+step "ask NWAM what it configured, which is what illumos does by default"
+  input text "nwamadm list 2>/dev/null | head -20; echo ---; svcs -H -o state svc:/network/physical 2>&1"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 12
+
+
+step "bring the interface up, which the install configured nothing for"
+  input text "L=$(dladm show-link -p -o link | head -1); echo LINK=$L; ipadm create-if $L 2>/dev/null; ipadm create-addr -T dhcp $L/v4 2>/dev/null || ipadm create-addr -T dhcp $L/v4 2>&1; sleep 5; ipadm show-addr; echo ---; ipadm show-addr -p -o addr | head -3"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 25
 
 
 step "wait for sshd"

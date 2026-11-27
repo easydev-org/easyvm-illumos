@@ -161,14 +161,29 @@ step "run it"
   settle 6
 
 
-step "give the interface an address, which the installer configured nothing for"
-  input text "ipadm create-addr -T dhcp net0/v4 2>/dev/null; ipadm show-addr"
+# THE INTERFACE IS NAMED BY THE SYSTEM, NOT ASSUMED HERE.
+#
+# `net0` IS A SOLARIS-ON-X86 NAME AND THIS GUEST MAY NOT HAVE ONE. The disk is booted with
+# `virtio-net-pci`, whose illumos driver makes `vioif0`, and OmniOS runs NWAM by default - so the
+# console is asked first and the answer is what the next command uses.
+step "what the system calls the interface, and whether it already has an address"
+  input text "dladm show-link; echo ---; ipadm show-if; echo ---; ipadm show-addr"
   settle 3
 
 
 step "run it"
   input ret
-  settle 15
+  settle 12
+
+
+step "give the interface an address, which the installer configured nothing for"
+  input text "L=$(dladm show-link -p -o link | head -1); echo LINK=$L; ipadm create-if $L 2>/dev/null; ipadm create-addr -T dhcp $L/v4 2>/dev/null || ipadm create-addr -T dhcp $L/v4 2>&1; sleep 5; ipadm show-addr"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 25
 
 
 step "flush and reboot into the system as the next boot will see it"
@@ -179,6 +194,28 @@ step "flush and reboot into the system as the next boot will see it"
 step "run it"
   input ret
   settle 10
+
+
+# THE REBOOT LANDS ON OMNIO S'S OWN BOOT MENU, AND NOTHING BOOTS UNTIL SOMEBODY CHOOSES.
+#
+# MEASURED on run 45948030400, step 21/29 - the wait for sshd ran its whole budget with the host
+# answering `dial tcp 172.30.0.1:2222: connect: no route to host`, and the frame it was reading said:
+#
+#	Welcome to OmniOS
+#	1. Boot Multi User [Enter]      2. Boot Single User ...
+#
+# SO A RETURN IS SENT TO TAKE ROW 1, WHICH IS `Multi User` AND IS WHAT SSHD NEEDS. Without it the
+# guest sits at its own menu for ever, which is exactly the twenty minutes this run spent.
+step "take multi user at the boot menu"
+  input ret
+  settle 15
+
+
+# AND THE MENU CAN APPEAR TWICE - once for the loader and once for the OS's own boot menu - so a
+# second Return is sent. On a guest that has already booted it lands harmlessly at the login prompt.
+step "and again, if the boot menu asked twice"
+  input ret
+  settle 15
 
 
 step "wait for sshd"
