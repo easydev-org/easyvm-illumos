@@ -32,7 +32,7 @@ ssh_port 2222
 step "boot the published disk"
   boot
     machine "q35,accel=kvm,vmport=off"
-    args [["-cpu", "Skylake-Client-v4"], ["-smp", "4"], ["-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd"], ["-drive", "if=pflash,format=raw,file=OVMF_VARS.fd"], ["-m", "6144"], ["-chardev", "socket,id=qga0,path=qga.sock,server=on,wait=off"], ["-device", "isa-serial,chardev=qga0"], ["-device", "VGA,xres=1024,yres=768"], ["-device", "qemu-xhci,id=xhci"], ["-device", "usb-tablet,bus=xhci.0"], ["-device", "usb-kbd,bus=xhci.0"], ["-drive", "file=disk.qcow2,if=none,format=qcow2,discard=unmap,id=target"], ["-device", "virtio-blk-pci,drive=target,bootindex=0"], ["-netdev", "tap,id=net0,ifname=qemutap0,script=no,downscript=no"], ["-device", "virtio-net-pci,netdev=net0,mac=52:54:00:56:4d:04,romfile=,host_mtu=1450"]]
+    args [["-cpu", "Skylake-Client-v4"], ["-smp", "4"], ["-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd"], ["-drive", "if=pflash,format=raw,file=OVMF_VARS.fd"], ["-m", "6144"], ["-chardev", "socket,id=qga0,path=qga.sock,server=on,wait=off"], ["-device", "isa-serial,chardev=qga0"], ["-chardev", "socket,id=qga1,path=qga1.sock,server=on,wait=off"], ["-device", "virtio-serial"], ["-device", "virtserialport,chardev=qga1,name=org.qemu.guest_agent.0"], ["-device", "VGA,xres=1024,yres=768"], ["-device", "qemu-xhci,id=xhci"], ["-device", "usb-tablet,bus=xhci.0"], ["-device", "usb-kbd,bus=xhci.0"], ["-drive", "file=disk.qcow2,if=none,format=qcow2,discard=unmap,id=target"], ["-device", "virtio-blk-pci,drive=target,bootindex=0"], ["-netdev", "tap,id=net0,ifname=qemutap0,script=no,downscript=no"], ["-device", "virtio-net-pci,netdev=net0,mac=52:54:00:56:4d:04,romfile=,host_mtu=1450"]]
     timeout 900
 
 
@@ -215,8 +215,19 @@ step "run it"
 # THE FIX IS TO MAKE THE ANSWER BE PRINTED WHERE THE LOG CAN SEE IT: the command's own output is
 # written to a file and then CAT'ed, and the step below reads the screen for the address line. A
 # failure then says WHAT the interface looked like instead of only that sshd never answered.
+# THE STATE IS PRINTED ONE SCREEN AT A TIME, AND `clear` IS WHAT MAKES IT READABLE.
+#
+# MEASURED on run 45957487374: the file was written and `cat`'ed, and the console gate that followed
+# passed - but the log carried no `IPADM` line at all. THE REASON IS THAT THIS CONSOLE DOES NOT CLEAR:
+# every earlier command's output is still in the scrollback, so `cat` printed twenty-plus screens below
+# the visible area and the read saw the oldest lines instead of the newest.
+#
+# SO THE SCREEN IS CLEARED FIRST AND ONLY THE FEW LINES THAT MATTER ARE PRINTED, with a marker on the
+# first and last so a reader can tell a complete answer from a truncated one:
+#
+#	clear; echo NETBEGIN; dladm show-link; echo --- ADDR ---; ipadm show-addr; echo NETEND
 step "put the network state on screen, where the log can read it"
-  input text "{ dladm show-link; echo ---IPADM---; ipadm show-addr; echo ---IFCONFIG---; ifconfig -a | head -30; } > /tmp/net.txt 2>&1; cat /tmp/net.txt"
+  input text "clear; echo NETBEGIN; dladm show-link 2>&1; echo ---ADDR---; ipadm show-addr 2>&1; echo ---IF---; ipadm show-if 2>&1; echo NETEND"
   settle 3
 
 
@@ -240,8 +251,7 @@ step "read the network state the system printed"
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
       scale 1
-      words [[IPADM], [inet], [link]]
-    max 20
+      words [[NETEND]]
 
 
 step "wait for sshd"
