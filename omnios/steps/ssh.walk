@@ -197,50 +197,25 @@ step "run it"
   settle 25
 
 
-step "flush and reboot into the system as the next boot will see it"
-  input text "sync; reboot"
-  settle 3
+# NO REBOOT, AND THAT IS A MEASUREMENT RATHER THAN A SHORTCUT.
+#
+# `174ff00` AND `d26abd0` BOTH REBOOTED HERE, AND THAT IS WHAT THREW THE ADDRESS AWAY. `ipadm
+# create-addr` ADDS AN ADDRESS TO THE RUNNING SYSTEM; IT IS NOT A PERSISTENT CONFIGURATION. A reboot
+# therefore comes back with the interface unconfigured - and the boot menu the earlier commits were
+# fighting is a symptom of the same mistake: the walk was restarting a machine it had just prepared.
+#
+# NOTHING HERE NEEDS A REBOOT. `svcadm enable` and `svc:/network/ssh` survive it anyway, `passwd -r
+# files` wrote to the disk, and the address is wanted for THIS boot so that `wait for sshd` can reach
+# it. So the walk goes straight from the console commands to the wait, and the only thing on the
+# network is the one thing that needs it.
+step "flush the writes, then wait for sshd on the address just configured"
+  input text "sync"
+  settle 2
 
 
 step "run it"
   input ret
-  settle 10
-
-
-# THE REBOOT LANDS ON OMNIO S'S OWN BOOT MENU, AND A RETURN SENT TOO EARLY IS LOST.
-#
-# MEASURED TWICE. Run 45948030400 waited its whole budget with `connect: no route to host`; run
-# 45950643255 got further - the host reported `ssh_ready="false" present=true`, so an address WAS
-# assigned - but the frame it read for twenty minutes was still
-#
-#	Welcome to OmniOS
-#	1. Boot Multi User [Enter]      2. Boot Single User ...
-#
-# THE TWO RETURNS `174ff00` ADDED WERE SENT DURING `settle 10`, BEFORE THE MENU WAS DRAWN, so the
-# kernel was still shutting down and they went nowhere. THE LESSON: A KEY MUST FOLLOW THE SCREEN
-# IT IS MEANT FOR.
-#
-# SO THE MENU IS WAITED FOR FIRST, and the Return is sent only once its own words are on screen. The
-# menu is drawn again after each keystroke, hence the loop: it reads, presses, and stops as soon as the
-# menu is gone.
-step "wait for the boot menu, then take row 1 until it is gone"
-  repeat
-    do
-      item "read the screen"
-        read
-          name menu
-      item "take multi user"
-        input ret
-        settle 8
-    until
-      bind gone
-      source menu
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      scale 1
-      without [Boot, Multi, User]
-    max 40
+  settle 4
 
 
 step "wait for sshd"
