@@ -195,7 +195,7 @@ step "the shell is a root prompt"
 # measurement that took four SmartOS runs to find. The console is a root shell here, so all three steps
 # can be typed at once and read back from the SERIAL LOG, not the screen.
 step "take the link from NWAM and give it an address"
-  input text "L=$(dladm show-link -p -o link | head -1); echo LINK=$L; ipadm delete-addr $L/v4 2>&1; ipadm create-addr -T static -a 172.30.0.2/24 $L/v4 2>&1; ipadm show-addr $L/v4 2>&1; if ipadm show-addr $L/v4 2>/dev/null | grep -q \"inet \"; then echo ADDR_OK; else echo ADDR_FAILED; fi"
+  input text "L=$(dladm show-link -p -o link | head -1); echo LINK=$L; ipadm delete-addr $L/v4 2>&1; ipadm create-addr -T static -a local=172.30.0.2/24 $L/v4 2>&1; ipadm show-addr $L/v4 2>&1; if ipadm show-addr $L/v4 2>/dev/null | grep -q \"inet \"; then echo ADDR_OK; else echo ADDR_FAILED; fi"
   settle 3
 
 

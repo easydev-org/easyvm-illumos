@@ -319,7 +319,7 @@ step "run it"
 #
 # THAT IS WHAT `answers.json`'s `admin_ip: dhcp` WOULD HAVE PRODUCED, written down instead of negotiated.
 step "find the DHCP service, start it, and ask for a fresh address"
-  input text "{ echo LINK=$(dladm show-link -p -o link | head -1); L=$(dladm show-link -p -o link | head -1); ipadm delete-addr $L/v4 2>&1; ipadm create-addr -T static -a 172.30.0.2/24 $L/v4 2>&1; ipadm show-addr $L/v4 2>&1; } > /dev/term/a 2>&1; echo NET_STATIC_ADDR_OK"
+  input text "{ echo LINK=$(dladm show-link -p -o link | head -1); L=$(dladm show-link -p -o link | head -1); ipadm delete-addr $L/v4 2>&1; ipadm create-addr -T static -a local=172.30.0.2/24 $L/v4 2>&1; ipadm show-addr $L/v4 2>&1; } > /dev/term/a 2>&1; echo NET_STATIC_ADDR_OK"
   settle 3
 
 
