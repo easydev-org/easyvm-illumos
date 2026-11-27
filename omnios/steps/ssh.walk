@@ -268,6 +268,54 @@ step "the address is on the screen"
     max 40
 
 
+# sshd IS STARTED HERE, BECAUSE NOTHING ELSE EVER STARTED IT.
+#
+# MEASURED on run 45987496477 - THE FIRST RUN WHOSE NETWORK WORKED AT ALL:
+#
+#	host diag [icmp guest]: ICMP_OK 2/2
+#	host diag [ip neigh]: 172.30.0.2 dev qemubr0 lladdr 52:54:00:56:4d:04 DELAY
+#	host diag [ss 22]: ---conn---
+#	error: sshd does not accept a connection
+#
+# THE ADDRESS IS UP AND THE PORT IS EMPTY. `grep svcadm omnios/steps/ssh.walk` found nothing: THIS FILE
+# NEVER ENABLED sshd. Earlier versions relied on `install.walk`'s Services pane, but that pane was
+# measured to be about the INSTALLER's own environment - and the published disk comes up with
+# `svc:/network/ssh` disabled, which is why every run's port was closed.
+#
+# SO IT IS ENABLED FROM THE ROOT SHELL THIS STAGE ALREADY HAS, and the state is printed to the screen so
+# the log records what SMF said:
+#
+#	svcadm enable -s svc:/network/ssh     `-s` waits for the transition, so the next step sees the result
+#	svcs -H -o state svc:/network/ssh     `online` or the state it actually reached
+step "start sshd, which this disk ships disabled"
+  input text "svcadm enable -s svc:/network/ssh; svcs -H -o state svc:/network/ssh; echo SSHD_STATE_PRINTED"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 12
+
+
+step "sshd reports its state"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name ss
+    until
+      bind up
+      source ss
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[SSHD_STATE_PRINTED]]
+    max 30
+
+
 step "wait for sshd"
   repeat
     until machine_ssh
