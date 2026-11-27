@@ -151,10 +151,36 @@ step "leave the menu for the loader"
   settle 3
 
 
-step "the loader prompt is answering"
-  until "ok"
-  from console
-  timeout 120
+# THE LOADER'S PROMPT IS ON THE VGA, NOT IN THE SERIAL LOG - AND `read` IS WHAT SEES IT.
+#
+# MEASURED on run 45974031760: `esc` was sent, then `until "ok" from console` waited two minutes for the
+# word in console.log and never found it. THE SAME FAILURE MODE AS THE SHELL OUTPUT ON SMARTO S: this
+# loader writes its prompt to the framebuffer, while `console.log` carries the serial line.
+#
+# SO THE GATE IS A SCREEN READ, which is what every other gate in this file already is. `ok` is the
+# illumos loader's own prompt string and it is drawn as text, so a read finds it the moment the loader
+# finishes - and the window is generous because the loader does not autoboot after `esc`.
+#
+# `without: [Multi, User]` KEEPS THE MENU OUT: if `esc` did not take, the menu is still on screen and its
+# text would otherwise be read as an answer.
+step "the loader prompt is answering, on the screen"
+  repeat
+    do
+      item
+        settle 3
+      item "read the screen"
+        read
+          name ld
+    until
+      bind up
+      source ld
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      without [Multi, User]
+      words [[ok]]
+    max 40
 
 
 step "ask for single user"
