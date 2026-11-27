@@ -340,8 +340,35 @@ step "run it"
 # `M=SSHCONF; echo ${M}RC=$?` would have echoed 0 whatever sshd said, which is a gate that can never
 # fail. And the marker is spelled by two variables, so the typed line does not contain the word the
 # gate looks for.
+# THE DISK HAS NO HOST KEYS, SO sshd CANNOT START AT ALL.
+#
+# MEASURED on run 46008890946 - the first run whose screen could be read, after the framebuffer was
+# woken and the caret mangling was removed:
+#
+#	root@omnios:"# sshd -t; R=$?; M=SSHCONF; echo ${M}RC=$R
+#	sshd: no hostkeys available -- exiting
+#	SSHCONFRC=1
+#
+# THAT IS THE ANSWER TO EVERY CLOSED PORT IN THIS STAGE'S HISTORY. `sshd -t` exits 1 because
+# /etc/ssh/ssh_host_*_key does not exist, and a daemon that cannot find a host key exits the same way
+# when SMF starts it - so `svcadm enable` reported success, `svcs` said whatever it said, and nothing
+# ever listened. The installer's Services pane enables the service; it does not generate keys, because
+# on a normal install the first start does.
+#
+# `ssh-keygen -A` IS THE STANDARD FIX and it writes every key type the config names, for the host
+# itself, without a passphrase. It is safe to run when keys already exist - it skips them.
+step "generate the host keys this disk was never given"
+  input text "ssh-keygen -A; echo KEYGEN_DONE"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 25
+
+
 step "check the configuration parses"
-  input text "sshd -t; R=$?; M=SSHCONF; echo ${M}RC=$R"
+  input text "sshd -t; echo CONFRC=$?"
   settle 3
 
 
@@ -368,8 +395,7 @@ step "the sshd configuration is valid"
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
       scale 1
-      words [[SSHCONFRC=0]]
-      without [SSHCONFRC=255]
+      words [[CONFRC=0]]
     max 40
 
 
