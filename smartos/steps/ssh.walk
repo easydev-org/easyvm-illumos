@@ -166,107 +166,29 @@ step "run it"
   settle 10
 
 
-# THE INTERFACE IS NAMED BY THE SYSTEM, NOT ASSUMED HERE.
+# THE ADDRESS COMES FROM NWAM, WHICH THIS DISK WAS INSTALLED TO USE - NOT FROM `ipadm` HERE.
 #
-# `net0` IS A SOLARIS-ON-X86 NAME AND THIS GUEST MAY NOT HAVE ONE. The disk is booted with
-# `virtio-net-pci`, whose illumos driver makes `vioif0`; NWAM may also already have addressed it. So the
-# console is asked FIRST, and the answer is what the next command uses - a walk that hard-codes `net0`
-# on a guest whose interface is `vioif0` configures nothing and then waits twenty minutes for sshd.
-step "what the system calls the interface, and whether it already has an address"
-  input text "dladm show-link; echo ---; ipadm show-if; echo ---; ipadm show-addr"
-  settle 3
-
-
-step "run it"
-  input ret
-  settle 12
-
-
-step "ask NWAM what it configured, which is what illumos does by default"
-  input text "nwamadm list 2>/dev/null | head -20; echo ---; svcs -H -o state svc:/network/physical 2>&1"
-  settle 3
-
-
-step "run it"
-  input ret
-  settle 12
-
-
-step "bring the interface up, which the install configured nothing for"
-  input text "L=$(dladm show-link -p -o link | head -1); echo LINK=$L; ipadm create-if $L 2>/dev/null; ipadm create-addr -T dhcp $L/v4 2>/dev/null || ipadm create-addr -T dhcp $L/v4 2>&1; sleep 5; ipadm show-addr; echo ---; ipadm show-addr -p -o addr | head -3"
-  settle 3
-
-
-step "run it"
-  input ret
-  settle 25
-
-
-# THE OUTPUT IS READ OFF THE SCREEN, BECAUSE A CONSOLE ECHOES TYPING AND NOT RESULTS.
+# `smartos/media/answers.json` ALREADY SAID WHAT THIS STAGE WAS TRYING TO SAY:
 #
-# MEASURED on runs 45950879868 and 45954121202: the log shows `typed 246 character(s)` and then
-# `machine_ssh: ssh_ready="false" present=true` for fifteen minutes, and the host's own diagnosis says
+#	"admin_mac": "52:54:00:56:4d:04",
+#	"admin_ip":  "dhcp",
 #
-#	host diag [icmp guest]: try1: timed out | ICMP_OK 1/2
-#	host diag [tap on dial]: connect: timed out
+# and that is the MAC this walk's own `-netdev` uses. So the installer configured DHCP for this guest,
+# and a stage that runs `ipadm create-addr -T dhcp $L/v4` on top of it is fighting the thing that was
+# set up for it - measured, on two runs, as `host diag [icmp guest]: try1: timed out` while the guest
+# was in fact booting normally behind an unreadable console.
 #
-# so `present=true` WAS THE ARP CACHE, not the guest. NOTHING IN THE LOG SAID WHETHER `ipadm` WORKED.
+# NWAM IS THE MECHANISM AND IT NEEDS TIME, NOT COMMANDS. `nwam` brings the link up and runs the DHCP
+# client as part of a normal boot; the only thing this stage has to do is WAIT, and the wait it already
+# has is `wait for sshd` - which cannot pass until the address exists.
 #
-# THE FIX IS TO MAKE THE ANSWER BE PRINTED WHERE THE LOG CAN SEE IT: the command's own output is
-# written to a file and then CAT'ed, and the step below reads the screen for the address line. A
-# failure then says WHAT the interface looked like instead of only that sshd never answered.
-# THE STATE IS PRINTED ONE SCREEN AT A TIME, AND `clear` IS WHAT MAKES IT READABLE.
+# SO NOTHING IS CONFIGURED HERE. The console commands that tried are gone: every one of them was
+# unreadable in the log (`IKON EALALADN ... WN PALL ALN`, twice with `clear` and twice without), and
+# the one thing they were meant to prove - that the address exists - is exactly what ssh answers.
 #
-# MEASURED on run 45957487374: the file was written and `cat`'ed, and the console gate that followed
-# passed - but the log carried no `IPADM` line at all. THE REASON IS THAT THIS CONSOLE DOES NOT CLEAR:
-# every earlier command's output is still in the scrollback, so `cat` printed twenty-plus screens below
-# the visible area and the read saw the oldest lines instead of the newest.
-#
-# SO THE SCREEN IS CLEARED FIRST AND ONLY THE FEW LINES THAT MATTER ARE PRINTED, with a marker on the
-# first and last so a reader can tell a complete answer from a truncated one:
-#
-#	clear; echo NETBEGIN; dladm show-link; echo --- ADDR ---; ipadm show-addr; echo NETEND
-# NO `clear` ANY MORE: THE PREVIOUS RUN SHOWED WHAT IT COSTS.
-#
-# MEASURED on run 45961059750: the step typed the command, the gate after it waited for `NETEND`, and
-# the frames it read were still the console's OLD content (`IKON EALALADN ... WN PALL ALN`). `clear`
-# emptied the serial line and the command's own output never arrived on it - the screen the walk can
-# read went blank instead of showing the answer.
-#
-# THE CONSOLE IS READABLE AFTER LOGIN, and `install.walk` proves it on this same disk: its gate waits
-# for `[[root@smartos]]` and gets it. So the fix is not a different channel - it is printing WITHOUT
-# clearing first, so the output lands BELOW what is already there and the read finds it.
-#
-# THE MARKERS STAY, because they are what makes a partial read detectable: `NETBEGIN` says the command
-# started producing output and `NETEND` says it finished.
-step "put the network state on screen, where the log can read it"
-  input text "echo NETBEGIN; dladm show-link 2>&1 | tail -5; echo ---ADDR---; ipadm show-addr 2>&1 | tail -8; echo ---IF---; ipadm show-if 2>&1 | tail -5; echo NETEND"
-  settle 3
-
-
-step "run it"
-  input ret
-  settle 12
-
-
-step "read the network state the system printed"
-  repeat
-    do
-      item
-        settle 5
-      item "read the screen"
-        read
-          name net
-    until
-      bind up
-      source net
-      mode text
-      rect [0, 0, 1024, 768]
-      rect_at [1024, 768]
-      scale 1
-      words [[NETEND]]
-
-
+# IF SSHD STILL DOES NOT ANSWER, THE NEXT RUN'S `wait for sshd` BUDGET IS THE DIAGNOSIS: a `no route to
+# host` means no address, and a `connection refused` means an address with sshd down. Those two are
+# different repairs and the host already prints which one it was.
 step "wait for sshd"
   repeat
     until machine_ssh
