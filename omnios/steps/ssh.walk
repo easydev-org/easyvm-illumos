@@ -59,56 +59,52 @@ step "boot the published disk"
 #
 # SO NOTHING IS PRESSED HERE. The menu's own words are waited for, and the step after this one takes
 # row 2.
-# THE MENU AUTOBOOTS IN SIX SECONDS, AND `[Space] TO PAUSE` IS WHAT ITS OWN FOOTER SAYS.
+# THE MENU IS PRESSED AT, REPEATEDLY, BECAUSE `spc` ONCE ARRIVES BEFORE THE MENU IS DRAWN.
 #
-# MEASURED FROM THE RECORDING of run 45957674215, frame at 6s:
+# MEASURED on run 45959110119 - the commit that added `spc`. Its own key log is:
 #
-#	┌────────── Welcome to OmniOS ──────────┐
-#	  1. Boot Multi User [Enter]
-#	  2. Boot Single User
-#	  3. Escape to loader prompt
-#	  4. Reboot
+#	=== pause the countdown and take row 2 in the same breath
+#	  key spc
+#	  typed 1 character(s)
+#	  key ret
 #
-#	Options:
-#	  5. Configure Boot Options...
-#	  6. Select Boot Environment...
+# and the frame after it was a NORMAL BOOT: `OmniOS r151060 Version omnios-r151060-513bc64de92 64-bit`.
+# `boot:` returns as soon as qemu is up, which is BEFORE OmniOS has drawn its menu, so the three keys
+# went into a blank screen and the countdown took row 1 as if nothing had been sent.
 #
-#	Autoboot in 6 seconds. [Space] to pause
+# THE RECORDING OF THE SAME DISK SHOWS HOW LONG THE WINDOW IS: at t=5s the footer reads
+# `Autoboot in 7 seconds. [Space] to pause`, so the menu is up and waiting for roughly ten seconds.
 #
-# SO THERE IS NO TIME TO WAIT FOR A GATE AND THEN CHOOSE. The six earlier commits each waited for the
-# menu's words first - which took a read of several seconds - and by the time a key was sent the
-# countdown had already taken row 1. That is why every one of them produced a normal multi-user boot
-# (`OmniOS r151060 Version ...`) no matter whether it pressed `esc`, `down`+`ret`, or `-s`.
+# SO THE KEYS ARE REPEATED UNTIL THE MENU IS GONE, rather than sent once at an unknown moment:
 #
-# THE MENU IS PAUSED FIRST AND CHOOSEN SECOND, and both happen inside one `do` block so no read comes
-# between them:
+#	read the screen
+#	2, ret          row 2 is `Boot Single User`; a `2` typed before the menu arrives is harmless
+#	until the words "Boot"/"Multi"/"User" are absent
 #
-#	space     stops the countdown, which its own footer documents
-#	2         the row named `Boot Single User`
-#	ret       takes it
-#
-# The pair is repeated because a key that arrives before the menu is drawn is lost, and a second space
-# on an already-paused menu changes nothing.
-step "pause the countdown and take row 2 in the same breath"
-  do
-    item
-      input spc
-      settle 2
-    item
-      input text "2"
-      settle 2
-    item
-      input ret
-      settle 12
-    item
-      input spc
-      settle 2
-    item
-      input text "2"
-      settle 2
-    item
-      input ret
-      settle 12
+# ONCE THE MENU IS PAST, THE SAME KEYS ARE INERT: `2` and Return at the single-user shell produce a
+# line the shell rejects, which is why the gate after this one reads for a prompt rather than trusting
+# that nothing was typed.
+step "take row 2, retrying until the menu is gone"
+  repeat
+    do
+      item "read the screen"
+        read
+          name menu
+      item "type the row number"
+        input text "2"
+        settle 1
+      item "take it"
+        input ret
+        settle 6
+    until
+      bind gone
+      source menu
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      without [Multi, User, Autoboot]
+    max 25
 
 
 step "the single-user shell is up"
