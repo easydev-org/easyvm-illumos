@@ -258,8 +258,29 @@ step "run it"
 #
 # EACH LINE PRINTS ITS OWN RESULT TO /dev/term/a, so the serial log says WHICH of them failed when the
 # next run does - not only that the whole thing did.
-step "take the interface from NWAM, then give it an address"
-  input text "L=$(dladm show-link -p -o link | head -1); { echo LINK=$L; netadm disable -p ncu -n $L 2>&1; ipadm create-if $L 2>&1; ipadm create-addr -T dhcp $L/v4 2>&1; ipadm show-addr 2>&1; } > /dev/term/a 2>&1; echo NET_STATIC_ADDR_OK $L"
+# `netadm` DOES NOT EXIST ON THIS GUEST, AND `dhcpagent` IS NOT RUNNING - BOTH MEASURED, LINE BY LINE.
+#
+# Run 45978333078's serial output, which the /dev/term/a redirect finally made readable:
+#
+#	smartos ttya login: LINK=vioif                         the interface name is right
+#	-bash: netadm: command not found                        <-- THERE IS NO `netadm` HERE
+#	ipadm: Could not create vioif0 : Interface already exists  the link is already there
+#	ipadm: warning: Communication with dhcpagent timed out     <-- THE REAL BLOCKER
+#	inet 127.0.0.1/8 ...                                     only loopback
+#
+# SO THREE THINGS HAD TO CHANGE, AND EACH IS NOW ITS OWN LINE IN THE SAME COMMAND:
+#
+#	1  `netadm` is gone from the sequence - this release does not ship it, and `svcadm` is what
+#	   controls Network Auto-Magic here (`svc:/network/physical:nwam`).
+#	2  `ipadm create-if` is allowed to fail: the interface exists already, and "already exists" is
+#	   success for this purpose.
+#	3  THE DHCP AGENT IS STARTED BEFORE THE ADDRESS IS ASKED FOR. `Communication with dhcpagent timed
+#	   out` means the agent was not running, so no address could ever arrive however many times the
+#	   command was retried.
+#
+# EVERY LINE STILL PRINTS TO /dev/term/a, so the next failure names the step that failed.
+step "stop NWAM, start the DHCP agent, then ask for an address"
+  input text "{ echo LINK=$(dladm show-link -p -o link | head -1); svcadm disable -s svc:/network/physical:nwam 2>&1; svcadm enable -s svc:/network/dhcp/client 2>&1 || svcadm enable -s svc:/network/dhcp-client 2>&1; ipadm create-if $(dladm show-link -p -o link | head -1) 2>&1; ipadm create-addr -T dhcp $(dladm show-link -p -o link | head -1)/v4 2>&1; sleep 5; ipadm show-addr 2>&1; } > /dev/term/a 2>&1; echo NET_STATIC_ADDR_OK"
   settle 3
 
 
