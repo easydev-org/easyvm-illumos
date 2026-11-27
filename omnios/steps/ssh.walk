@@ -50,46 +50,48 @@ step "boot the published disk"
 
 # THE MENU IS GONE IN FOUR SECONDS, so Escape is sent immediately and repeatedly until the loader's
 # own prompt answers. `esc` at the loader stops the countdown; `-s` is then typed at the prompt.
-step "stop the loader's autoboot before it disappears"
-  do
-    item
-      input esc
-      settle 1
-    item
-      input esc
-      settle 1
-    item
-      input esc
-      settle 1
-
-
-step "the loader prompt is up"
+# THE MENU IS WAITED FOR, NOT INTERRUPTED. `esc` WAS ESCAPING TO A SHELL, NOT STOPPING A COUNTDOWN.
+#
+# Three earlier commits sent `esc` immediately after boot, believing it stopped an autoboot. The menu
+# this release draws is already on screen by then (measured: frame 4 of run 45956253734), and `esc` on
+# that menu selects ROW 3 - `[Esc]ape to loader prompt` - which is a different state from the row list
+# this stage now uses.
+#
+# SO NOTHING IS PRESSED HERE. The menu's own words are waited for, and the step after this one takes
+# row 2.
+step "the boot menu is on screen"
   repeat
     do
       item
-        settle 2
+        settle 5
       item "read the console"
         read
-          name ld
+          name menu
     until
       bind up
-      source ld
+      source menu
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
       scale 1
-      words [[ok], [boot], [loader]]
-    max 20
+      words [[Multi, User], [Boot]]
+    max 30
 
 
-step "ask for single user, which skips the login that has no password"
-  input text "-s"
-  settle 2
-
-
-step "boot it"
-  input ret
-  settle 20
+step "take the menu's own single-user row"
+  do
+    item
+      input down
+      settle 1
+    item
+      input ret
+      settle 8
+    item
+      input down
+      settle 1
+    item
+      input ret
+      settle 8
 
 
 step "the single-user shell is up"
