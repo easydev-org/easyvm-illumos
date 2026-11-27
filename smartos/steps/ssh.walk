@@ -226,8 +226,21 @@ step "run it"
 # first and last so a reader can tell a complete answer from a truncated one:
 #
 #	clear; echo NETBEGIN; dladm show-link; echo --- ADDR ---; ipadm show-addr; echo NETEND
+# NO `clear` ANY MORE: THE PREVIOUS RUN SHOWED WHAT IT COSTS.
+#
+# MEASURED on run 45961059750: the step typed the command, the gate after it waited for `NETEND`, and
+# the frames it read were still the console's OLD content (`IKON EALALADN ... WN PALL ALN`). `clear`
+# emptied the serial line and the command's own output never arrived on it - the screen the walk can
+# read went blank instead of showing the answer.
+#
+# THE CONSOLE IS READABLE AFTER LOGIN, and `install.walk` proves it on this same disk: its gate waits
+# for `[[root@smartos]]` and gets it. So the fix is not a different channel - it is printing WITHOUT
+# clearing first, so the output lands BELOW what is already there and the read finds it.
+#
+# THE MARKERS STAY, because they are what makes a partial read detectable: `NETBEGIN` says the command
+# started producing output and `NETEND` says it finished.
 step "put the network state on screen, where the log can read it"
-  input text "clear; echo NETBEGIN; dladm show-link 2>&1; echo ---ADDR---; ipadm show-addr 2>&1; echo ---IF---; ipadm show-if 2>&1; echo NETEND"
+  input text "echo NETBEGIN; dladm show-link 2>&1 | tail -5; echo ---ADDR---; ipadm show-addr 2>&1 | tail -8; echo ---IF---; ipadm show-if 2>&1 | tail -5; echo NETEND"
   settle 3
 
 
