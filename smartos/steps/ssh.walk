@@ -319,7 +319,7 @@ step "run it"
 #
 # THAT IS WHAT `answers.json`'s `admin_ip: dhcp` WOULD HAVE PRODUCED, written down instead of negotiated.
 step "find the DHCP service, start it, and ask for a fresh address"
-  input text "{ L=$(dladm show-link -p -o link | head -1); echo LINK=$L; ipadm create-if $L 2>&1; ifconfig $L plumb 172.30.0.2 netmask 255.255.255.0 up 2>&1; ifconfig $L 2>&1; } > /dev/term/a 2>&1; ifconfig $L 2>/dev/null | grep -q \"172.30.0.2\" && echo NET_STATIC_ADDR_OK || echo NET_ADDR_FAILED"
+  input text "{ L=$(dladm show-link -p -o link | head -1); echo LINK=$L; ifconfig $L plumb 172.30.0.2 netmask 255.255.255.0 up 2>&1; ifconfig $L | head -6; echo ---CHECK---; ifconfig -a | grep 172.30.0.2; } > /dev/term/a 2>&1; echo NET_ADDR_DONE"
   settle 3
 
 
@@ -328,10 +328,26 @@ step "run it"
   settle 20
 
 
-step "the address exists, as the serial log reports it"
-  until "NET_STATIC_ADDR_OK"
+step "the address step has finished"
+  until "NET_ADDR_DONE"
   from console
   timeout 180
+
+
+# THE ADDRESS IS VERIFIED BY THE HOST, NOT BY A WORD THE GUEST PRINTED.
+#
+# MEASURED on run 45991261534 - `ifconfig` DID configure the address:
+#
+#	ifconfig: cannot plumb vioif0: Interface already exists
+#	          inet 172.30.0.2 netmask ffffff00 broadcast 172.30.0.255
+#
+# and the run still failed, because the word this file waited for was printed by a `grep` that ran
+# OUTSIDE the redirect - where `$L` is no longer set. THE ADDRESS EXISTED AND THE GATE COULD NOT SEE IT.
+#
+# SO THE HOST'S OWN TEST IS THE GATE: `machine_ssh` probes 172.30.0.2:22 - the address just configured -
+# and it is a fact neither the console nor a shell variable can fake. The `wait for sshd` step that
+# follows is that probe, so this file no longer needs a separate one: `NET_ADDR_DONE` says the command
+# finished, and the probe says whether it worked.
 
 
 step "wait for sshd"
