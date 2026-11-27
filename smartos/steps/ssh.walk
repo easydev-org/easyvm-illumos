@@ -36,6 +36,27 @@ step "boot the published disk"
     timeout 900
 
 
+# SMARTOS SHOWS ITS OWN BOOT MENU FIRST, AND NOTHING LOGS IN UNTIL ROW 1 IS TAKEN.
+#
+# MEASURED on run 45947993748, step 2/25 - the console gate read this for its whole budget:
+#
+#	1. Boot SmartOS [Enter]   2. Escape to loader prompt   3. Reboot Options
+#
+# `smoke.walk` passes the same menu because its budget is four minutes and the menu eventually times
+# out on its own; a stage that wants to be quick should take row 1 instead of waiting for it.
+#
+# A RETURN IS SENT FIRST, TWICE - the menu can be redrawn after the loader hands over - and the login
+# wait follows. On a guest that is already past the menu the keystroke lands harmlessly.
+step "take row 1 at SmartOS's own boot menu"
+  input ret
+  settle 15
+
+
+step "and again, if the menu asked twice"
+  input ret
+  settle 15
+
+
 step "the console login prompt is up"
   repeat
     do
