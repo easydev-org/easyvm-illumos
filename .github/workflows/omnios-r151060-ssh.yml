@@ -1,0 +1,58 @@
+name: omnios
+
+# OMNIOS, AS ITS OWN STAGE - the server half that `smoke.walk` cannot cover.
+#
+# `smoke.walk` PROVES THE CONSOLE LOGIN APPEARS and says in its own header that it "does not log in and
+# does not click". THIS PROVES SOMEBODY CAN GET IN: a root password on the disk, `svc:/network/ssh`
+# online, root allowed over the network, and `uname -a`, `id -un` and `zpool list` answering over ssh.
+#
+# THE ROOT PASSWORD IS THE WHOLE REASON THIS STAGE IS NOT SHORT. `install.walk`'s seven pages are all
+# the installer asks and none of them is a password page - so the disk it publishes boots and nobody
+# can log in to it. The ssh walk therefore takes the loaders' single-user mode, sets the password
+# there, enables sshd, and only then uses the network.
+#
+# NO DESKTOP, AND THAT IS THE DISTRIBUTION: `README.md` records the measurement - 1109 packages across
+# OmniOS's core and extra repositories and NONE of the desktop names. So the walk's last acts are
+# `sync`, a clean shutdown and `wait_until stopped`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      disks_repository:
+        description: "the ghcr repository that holds the disks"
+        default: "easydev-org/easyvm-solaris"
+      from_tag:
+        description: >-
+          the PUBLISHED disk this stage continues from (default omnios-install)
+        default: "omnios-install"
+
+concurrency:
+  group: omnios-ssh
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  checks: write
+
+jobs:
+  ssh:
+    uses: easydev-org/easyvm/.github/workflows/stage.yml@v0.0.4
+    secrets: inherit
+    with:
+      image_repository: easydev-org/easyvm
+      image_tag: v0.0.4
+      disk_gb: "20"
+      group: omnios-ssh
+      disks_repository: ${{ inputs.disks_repository }}
+      stages: |
+        [
+          {
+            "name": "omnios-ssh",
+            "file": "omnios/steps/ssh.walk",
+            "pull": "${{ inputs.from_tag }}",
+            "out": "omnios-ssh.qcow2",
+            "publish": "omnios-ssh",
+            "timeout": 240
+          }
+        ]

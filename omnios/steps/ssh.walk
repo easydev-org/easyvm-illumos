@@ -1,0 +1,221 @@
+# OMN IOS r151060 - the administrator gets in, and the server proves it is a server.
+#
+# READ `omnios/steps/install.walk` FIRST. ITS SEVEN PAGES ARE ALL THE INSTALLER ASKS, AND NONE OF THEM
+# IS A ROOT PASSWORD - measured, and that file lists every page. So the disk it publishes has an
+# `rpool` that boots and a root account whose password NOBODY SET.
+#
+# THAT IS WHAT THIS STAGE FIXES, AND IT FIXES IT THE ONLY WAY AN UNATTENDED WALK CAN: from the loader's
+# own single-user mode, which skips the login that has no password.
+#
+# THE LOADER MENU CLEARS ITSELF ON A FOUR SECOND AUTOBOOT - the install file says so in its own words -
+# so this walk starts pressing as soon as the machine is up, waits for the menu, and takes the
+# single-user entry. `-s` is illumos' own spelling for it, the same as Solaris'.
+#
+# ONCE IN, THREE THINGS ARE TRUE THAT WERE NOT:
+#
+#	root gets a password                 `passwd -r files root`, twice, so a console login works
+#	sshd is enabled                      OmniOS ships `svc:/network/ssh:default` disabled
+#	root may log in over the network     `PermitRootLogin yes`, because the console is not the network
+#
+# AND THE INTERFACE IS CONFIGURED, because the installer's own network menu does not touch the disk:
+# `ipadm create-addr -T dhcp net0/v4`.
+#
+# NOTHING IS CONFIGURED OVER SSH UNTIL IT ANSWERS. Every one of those four is a console keystroke, and
+# `wait for sshd` is the first thing that uses the network at all - the reverse order is the deadlock
+# `midnightbsd` was stuck in.
+#
+# NO DESKTOP, AND THAT IS THE DISTRIBUTION: `README.md` records the measurement - OmniOS's core and
+# extra repositories hold 1109 packages between them and NONE of the desktop names, no mate, no xfce,
+# no lightdm, no slim. So the last acts are `sync`, a clean shutdown, and `wait_until stopped`.
+walkthrough "omnios r151060 - single user, a root password, sshd, and a server that answers"
+resolution 1024x768
+recording_resolution 1024x768
+var out
+  default out/omnios-ssh.qcow2
+  from args.out
+password admin
+user root
+var user
+  default root
+  from args.user
+ssh_port 2222
+
+
+step "boot the published disk"
+  boot
+    machine "q35,accel=kvm,vmport=off"
+    args [["-cpu", "Skylake-Client-v4"], ["-smp", "4"], ["-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd"], ["-drive", "if=pflash,format=raw,file=OVMF_VARS.fd"], ["-m", "4096"], ["-chardev", "socket,id=qga0,path=qga.sock,server=on,wait=off"], ["-device", "isa-serial,chardev=qga0"], ["-device", "VGA,xres=1024,yres=768"], ["-device", "qemu-xhci,id=xhci"], ["-device", "usb-tablet,bus=xhci.0"], ["-device", "usb-kbd,bus=xhci.0"], ["-drive", "file=disk.qcow2,if=none,format=qcow2,discard=unmap,id=target"], ["-device", "virtio-blk-pci,drive=target,bootindex=0"], ["-netdev", "tap,id=net0,ifname=qemutap0,script=no,downscript=no"], ["-device", "virtio-net-pci,netdev=net0,mac=52:54:00:56:4d:04,romfile=,host_mtu=1450"]]
+    timeout 900
+
+
+# THE MENU IS GONE IN FOUR SECONDS, so Escape is sent immediately and repeatedly until the loader's
+# own prompt answers. `esc` at the loader stops the countdown; `-s` is then typed at the prompt.
+step "stop the loader's autoboot before it disappears"
+  do
+    item
+      input esc
+      settle 1
+    item
+      input esc
+      settle 1
+    item
+      input esc
+      settle 1
+
+
+step "the loader prompt is up"
+  repeat
+    do
+      item
+        settle 2
+      item "read the console"
+        read
+          name ld
+    until
+      bind up
+      source ld
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[ok], [boot], [loader]]
+    max 20
+
+
+step "ask for single user, which skips the login that has no password"
+  input text "-s"
+  settle 2
+
+
+step "boot it"
+  input ret
+  settle 20
+
+
+step "the single-user shell is up"
+  repeat
+    do
+      item
+        settle 5
+      item "read the console"
+        read
+          name su
+    until
+      bind up
+      source su
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[#], [single, user]]
+    max 60
+
+
+step "put root's password on the disk, twice"
+  input text "passwd -r files {{ user }}"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 5
+
+
+step "the new password"
+  input text "{{ password }}"
+  settle 2
+
+
+step "take it"
+  input ret
+  settle 4
+
+
+step "the repeat"
+  input text "{{ password }}"
+  settle 2
+
+
+step "take the repeat"
+  input ret
+  settle 6
+
+
+step "enable sshd, which a fresh OmniOS ships disabled"
+  input text "svcadm enable -s svc:/network/ssh:default"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 8
+
+
+step "let root log in over the network, which is not the console"
+  input text "sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config; grep -c '^PermitRootLogin yes' /etc/ssh/sshd_config"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 6
+
+
+step "give the interface an address, which the installer configured nothing for"
+  input text "ipadm create-addr -T dhcp net0/v4 2>/dev/null; ipadm show-addr"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 15
+
+
+step "flush and reboot into the system as the next boot will see it"
+  input text "sync; reboot"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 10
+
+
+step "wait for sshd"
+  repeat
+    until machine_ssh
+    max 120
+    pause 10
+
+
+step "prove the kernel over ssh"
+  ssh "uname -a"
+
+
+step "prove the account over ssh"
+  ssh "id -un"
+
+
+step "prove the root pool is the one that was installed"
+  ssh "zpool list -H -o name,health"
+
+
+step "prove sshd is the service that answered"
+  ssh "svcs -H -o state svc:/network/ssh:default"
+
+
+step "flush the writes before the machine stops"
+  ssh "sync"
+
+
+step "shut the machine down"
+  ssh "shutdown -i 0 -g 0 -y"
+
+
+step "wait for the machine to stop"
+  wait_until stopped
+  timeout 300
+
+
+step "publish the disk"
+    save "{{ out }}"
