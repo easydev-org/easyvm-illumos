@@ -141,8 +141,19 @@ step "take the repeat"
   settle 6
 
 
-step "enable sshd, which a fresh OmniOS ships disabled"
-  input text "svcadm enable -s svc:/network/ssh:default"
+# THE SERVICE IS NAMED BY THE SYSTEM, NOT ASSUMED HERE - a guessed FMRI fails silently in a console.
+step "what the system calls its ssh service"
+  input text "svcs -a | grep -i ssh"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 6
+
+
+step "enable sshd, by the name the system just reported"
+  input text "svcs -a | grep -i ssh | awk '{print $2}' | while read f; do svcadm enable -s $f; done; svcs -H -o fmri,state 2>/dev/null | grep -i ssh"
   settle 3
 
 
