@@ -174,7 +174,7 @@ step "the shell is a root prompt"
   repeat
     do
       item
-        settle 5
+        settle 3
       item "read the screen"
         read
           name sh
@@ -213,7 +213,27 @@ step "the shell is a root prompt"
 # ON PURPOSE: tribblix measured a long line arriving mangled (`32c` as `#@C`, `|` as `?`), and one
 # command per keystroke is what made the same edits work there.
 step "lift the console restriction, which pins root to the console"
-  input text "sed -i s/^CONSOLE=.*/CONSOLE=/ /etc/default/login"
+  input text "grep -v CONSOLE= /etc/default/login > /tmp/lg"
+  settle 2
+
+
+step "run it"
+  input ret
+  settle 4
+
+
+step "write CONSOLE= back with nothing after it"
+  input text "echo CONSOLE= >> /tmp/lg; cp /tmp/lg /etc/default/login"
+  settle 2
+
+
+step "run it"
+  input ret
+  settle 5
+
+
+step "show the line that now pins root nowhere"
+  input text "grep CONSOLE= /etc/default/login"
   settle 3
 
 
@@ -222,20 +242,27 @@ step "run it"
   settle 5
 
 
-# THE LINE IS DELETED AND RE-APPENDED, BECAUSE A `sed` REPLACEMENT WITH A SPACE IS WHAT MANGLES.
+# EVERY LINE IS DELETED AND RE-APPENDED, AND NO COMMAND TYPES A CARET.
 #
-# tribblix measured the mangling on this same console: `PermitRootLogin yes` arrived as
-# `PermitRootLogin_yes`, which `sshd -t` called `no argument after keyword` - and a config sshd
-# refuses is a daemon that does not come back after the restart. A quoted `s///` replacement still
-# carries a space, so this does not use one:
+# MEASURED on run 46002544672, whose own screen read back the command it had typed:
 #
-#	sed -i /^PermitRootLogin/d     every live directive removed (the commented one does not match)
-#	echo PermitRootLogin yes >>    one written back, at the end, which is where sshd will read it
+#	root@omnios:"# sed -i s/*CONSOLE=.*/CONSOLE=/ /etc/default/login
+#	                     ^ TYPED AS `^`, ARRIVED AS `*`
 #
-# and `sshd -t` in the step after this one is what proves the file survived the trip.
+# THE CONSOLE TURNS `^` INTO `*`. So `s/^CONSOLE=.*/` became `s/*CONSOLE=.*/`, which matches no line,
+# and every "fix" this file made with a caret silently did nothing - which is why two runs in a row
+# published a disk whose CONSOLE= was untouched and whose PermitRootLogin was still `without-password`.
+#
+# SO NEITHER FILE IS EDITED WITH `sed` OR A CARET ANY MORE:
+#
+#	grep -v CONSOLE= ... > /tmp/lg ; echo CONSOLE= >> /tmp/lg ; cp /tmp/lg /etc/default/login
+#	grep -v PermitRootLogin ... > /tmp/sc ; echo PermitRootLogin yes >> /tmp/sc ; cp ...
+#
+# `grep -v` takes no anchor, so the pattern cannot be mangled, and `sshd -t` in the step after is what
+# proves the file survived the trip.
 step "let root log in with a password"
-  input text "sed -i /^PermitRootLogin/d /etc/ssh/sshd_config"
-  settle 3
+  input text "grep -v PermitRootLogin /etc/ssh/sshd_config > /tmp/sc"
+  settle 2
 
 
 step "run it"
@@ -243,8 +270,8 @@ step "run it"
   settle 4
 
 
-step "write the directive back at the end of the file"
-  input text "echo PermitRootLogin yes >> /etc/ssh/sshd_config"
+step "write the directive back"
+  input text "echo PermitRootLogin yes >> /tmp/sc; cp /tmp/sc /etc/ssh/sshd_config"
   settle 3
 
 
@@ -254,7 +281,7 @@ step "run it"
 
 
 step "the directive now says yes"
-  input text "grep -c \"^PermitRootLogin yes\" /etc/ssh/sshd_config; echo CONFIG_EDITED"
+  input text "M=CONFIG; grep PermitRootLogin /etc/ssh/sshd_config; echo ${M}_EDITED"
   settle 3
 
 
@@ -326,8 +353,11 @@ step "run it"
 step "the sshd configuration is valid"
   repeat
     do
+      item "wake the console, or it keeps showing the boot banner"
+        input ret
+        settle 2
       item
-        settle 5
+        settle 3
       item "read the screen"
         read
           name cfg
@@ -496,8 +526,11 @@ step "wake the console, then read the address off the screen"
 step "the address is on the screen"
   repeat
     do
+      item "wake the console, or it keeps showing the boot banner"
+        input ret
+        settle 2
       item
-        settle 5
+        settle 3
       item "read the screen"
         read
           name addr
@@ -576,8 +609,11 @@ step "run it"
 step "sshd reports its state"
   repeat
     do
+      item "wake the console, or it keeps showing the boot banner"
+        input ret
+        settle 2
       item
-        settle 5
+        settle 3
       item "read the screen"
         read
           name ss
