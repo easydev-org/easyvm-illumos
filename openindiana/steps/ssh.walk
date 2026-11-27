@@ -234,7 +234,7 @@ step "what session files and greeters this disk has"
 # can load, and the log above was truncated to its last fifteen lines. THIS STEP READS THE WHOLE THING
 # plus the driver directory and /etc/X11, so the next change is made from evidence.
 step "what drivers and framebuffers this disk has"
-  run "echo '--- fbs ---'; ls /dev/fbs/ 2>&1 | tr '\\n' ' '; echo; echo '--- kernel drivers ---'; ls /platform/i86pc/kernel/drv/amd64/ | grep -iE 'vga|fb|display' | tr '\\n' ' '; echo; echo '--- pkgs contain vgafb ---'; pkg list -H | grep -iE 'vgafb|illumosfb|graphics' | tr '\\n' ' '; echo; echo '--- installed count ---'; pkg list -H | wc -l; echo '--- dmesg ---'; dmesg | grep -iE 'vga|fbt|nvidia|display' | tail -6"
+  run "echo '--- fbs ---'; ls /dev/fbs/ 2>&1 | tr '\\n' ' '; echo; echo '--- kernel fb drivers ---'; ls /kernel/drv/amd64/ 2>/dev/null | grep -iE 'vgafb|vgatext|fbt' | tr '\\n' ' '; ls /platform/i86pc/kernel/drv/amd64/ 2>/dev/null | grep -iE 'vgafb|vgatext|fbt' | tr '\\n' ' '; echo; echo '--- xorg modules ---'; ls /usr/lib/xorg/modules/ 2>&1 | tr '\\n' ' '; echo; echo '--- xorg output modules ---'; ls /usr/lib/xorg/modules/libfb* /usr/lib/xorg/modules/libshadow* /usr/lib/xorg/modules/libexa* /usr/lib/xorg/modules/libwfb* 2>&1; echo '--- xorg pkgs ---'; pkg list -H | grep -iE 'xorg-server|xorg-video|fbdev' | tr '\\n' ' '; echo; echo '--- the Xorg log tail ---'; tail -25 /var/log/Xorg.0.log 2>&1"
   via ssh
   timeout 180
 
