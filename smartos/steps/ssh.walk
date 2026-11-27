@@ -214,8 +214,30 @@ step "run it"
 #
 #	L=$(dladm show-link -p -o link | head -1); ipadm create-if $L; ipadm create-addr -T dhcp $L/v4
 #	echo NET_STATIC_ADDR_OK $L
-step "give the interface an address"
-  input text "L=$(dladm show-link -p -o link | head -1); ipadm create-if $L 2>/dev/null; ipadm create-addr -T dhcp $L/v4 2>/dev/null; echo NET_STATIC_ADDR_OK $L; ipadm show-addr"
+# THE SHELL'S ECHO GOES TO `/dev/term/a`, WHICH IS THE SERIAL LOG; ITS STDOUT DOES NOT.
+#
+# MEASURED on run 45970737494, and this is the measurement that closes the question:
+#
+#	=== give the interface an address
+#	  typed 163 character(s)            <- THE COMMAND WAS TYPED
+#	  key ret
+#	=== the address exists, as the serial log reports it
+#	  waiting up to 3m0s for "NET_STATIC_ADDR_OK" in console.log
+#	  <- AND IT NEVER APPEARED
+#
+# `typed 163 character(s)` IS THE ENGINE WRITING TO THE CONSOLE, so the keystrokes arrived. What did not
+# arrive is the shell's own output: on SmartOS the login shell talks to `/dev/term/b`, while the file
+# this walk reads (`console.log`, the qemu `-serial` channel) carries `ttya`. The kernel writes there;
+# a login shell's stdout does not.
+#
+# SO THE ANSWER IS SENT TO THE CHANNEL THAT IS READ, BY HAND:
+#
+#	{ ... } > /dev/term/a 2>&1
+#
+# THE SAME LINE ALSO ECHOES TO THE SHELL ITSELF, so a reader of the screen sees it too - one command,
+# two channels, and the one the walk waits on is the one the machine actually writes to.
+step "give the interface an address, and say so on the serial line"
+  input text "L=$(dladm show-link -p -o link | head -1); ipadm create-if $L 2>/dev/null; ipadm create-addr -T dhcp $L/v4 2>/dev/null; { echo NET_STATIC_ADDR_OK $L; ipadm show-addr; } > /dev/term/a 2>&1; echo NET_STATIC_ADDR_OK $L"
   settle 3
 
 
