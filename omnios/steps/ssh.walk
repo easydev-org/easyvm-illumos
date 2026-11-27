@@ -112,6 +112,117 @@ step "boot the published disk"
 #
 # THE CONSOLE STEPS THAT SETUP NEEDED ARE GONE WITH IT, so this file now asks the one question it can
 # still answer: does the published disk answer ssh.
+# THE CONSOLE LOGIN IS TAKEN, AND ROOT IS GIVEN A PASSWORD THERE, BECAUSE NOTHING ELSE CAN.
+#
+# RUN 45975749631 WAS THE EXPERIMENT THAT ANSWERED "CAN ROOT LOG IN?": ten steps, no single-user work,
+# straight to `wait for sshd`. Its host diagnosis was
+#
+#	host diag [ip neigh]: 172.30.0.2 dev qemubr0 FAILED
+#	host diag [icmp guest]: try1: timed out
+#
+# - NO ADDRESS. `install.walk` enables `svc:/network/ssh` but its seven pages have no network step either,
+# so the published disk comes up with an unconfigured link, and there was never any question about root's
+# password to answer.
+#
+# AND THE CONSOLE IS THE ONLY CHANNEL, WHICH `smoke.walk` PROVES ON THIS SAME DISK: its `the installed
+# system is up` gate reads `omnios console login:` off the SCREEN and passes. So this stage logs in at
+# that prompt and does the two things the installer did not: give root a password, and give the link an
+# address. `smoke.walk` reading the prompt is the measurement that says the console works here.
+#
+# THE PASSWORD COMES FIRST, so the address step can be run as root afterwards.
+#
+#	root, Return                 the account
+#	<blank password>, Return     what a disk with no password page answers with
+#	passwd -r files root         then set one, twice
+step "the console login prompt is up"
+  repeat
+    do
+      item
+        settle 10
+      item "read the screen"
+        read
+          name login
+    until
+      bind up
+      source login
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[console, login], [omnios, console, login]]
+    max 60
+
+
+step "log in as root"
+  input text "root"
+  settle 2
+
+
+step "take the name"
+  input ret
+  settle 6
+
+
+# NO PASSWORD IS TYPED: a disk whose installer never asked for one answers the prompt with an empty line,
+# and typing a guess would be an answer this stage cannot verify. A Return is what an empty field needs.
+step "take the empty password, which is what a disk with no password page has"
+  input ret
+  settle 10
+
+
+step "the shell is a root prompt"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name sh
+    until
+      bind up
+      source sh
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[#], [root@]]
+    max 30
+
+
+# AND THE LINK GETS AN ADDRESS, FROM THE SAME ROOT SHELL, WITH NWAM MOVED ASIDE.
+#
+# OmniOS runs NWAM by default and `ipadm create-addr` is a no-op while it owns the link - the same
+# measurement that took four SmartOS runs to find. The console is a root shell here, so all three steps
+# can be typed at once and read back from the screen.
+step "take the link from NWAM and give it an address"
+  input text "L=$(dladm show-link -p -o link | head -1); netadm disable -p ncu -n $L; ipadm create-if $L; ipadm create-addr -T dhcp $L/v4; ipadm show-addr"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 25
+
+
+step "the address is on the console"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name addr
+    until
+      bind up
+      source addr
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[inet], [ok]]
+    max 30
+
+
 step "wait for sshd"
   repeat
     until machine_ssh
