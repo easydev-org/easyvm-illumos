@@ -298,8 +298,28 @@ step "run it"
 #
 # The address object is also DELETED first: `vioif0/v4` already exists in state `?`, and re-running
 # `create-addr` on it can never produce a lease.
+# `svcs -a | grep -i dhcp` PRINTED NOTHING - so there is no DHCP SERVICE on this guest at all.
+#
+# MEASURED on run 45983475823, the run that asked the system for the FMRI instead of guessing:
+#
+#	smartos ttya login: LINK=vioif0
+#	ipadm: could not delete address: Object not found
+#	ipadm: warning: Communication with dhcpagent timed out
+#	vioif0/v4    dhcp    ok    ?
+#	inet 127.0.0.1/8 ...                 <- still only loopback
+#
+# AND NO `svcs -a | grep -i dhcp` LINE APPEARS AT ALL, which is the whole answer: SmartOS's DHCP is not
+# an SMF-managed service here. `dhcpagent` is a BINARY that `ipadm` starts on demand, and on this
+# platform it is simply absent from the running system's PATH or is not packaged at all.
+#
+# SO THE ADDRESS IS TAKEN WITHOUT DHCP. `ipadm create-addr -T static` needs no agent:
+#
+#	the TAP behind this guest is 172.30.0.1/24 and every other guest here uses 172.30.0.2
+#	so 172.30.0.2/24 with the gateway at .1 is the address this machine would have been given
+#
+# THAT IS WHAT `answers.json`'s `admin_ip: dhcp` WOULD HAVE PRODUCED, written down instead of negotiated.
 step "find the DHCP service, start it, and ask for a fresh address"
-  input text "{ echo LINK=$(dladm show-link -p -o link | head -1); svcs -a | grep -i dhcp; L=$(dladm show-link -p -o link | head -1); svcadm disable -s svc:/network/physical:nwam 2>&1; svcs -a | grep -i dhcp | awk '{print $3}' | while read f; do svcadm enable -s $f 2>&1; done; ipadm delete-addr $L/v4 2>&1; ipadm create-addr -T dhcp $L/v4 2>&1; sleep 10; ipadm show-addr 2>&1; } > /dev/term/a 2>&1; echo NET_STATIC_ADDR_OK"
+  input text "{ echo LINK=$(dladm show-link -p -o link | head -1); L=$(dladm show-link -p -o link | head -1); ipadm delete-addr $L/v4 2>&1; ipadm create-addr -T static -a 172.30.0.2/24 $L/v4 2>&1; ipadm show-addr $L/v4 2>&1; } > /dev/term/a 2>&1; echo NET_STATIC_ADDR_OK"
   settle 3
 
 
