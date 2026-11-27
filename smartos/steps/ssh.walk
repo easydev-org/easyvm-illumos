@@ -236,8 +236,30 @@ step "run it"
 #
 # THE SAME LINE ALSO ECHOES TO THE SHELL ITSELF, so a reader of the screen sees it too - one command,
 # two channels, and the one the walk waits on is the one the machine actually writes to.
-step "give the interface an address, and say so on the serial line"
-  input text "L=$(dladm show-link -p -o link | head -1); ipadm create-if $L 2>/dev/null; ipadm create-addr -T dhcp $L/v4 2>/dev/null; { echo NET_STATIC_ADDR_OK $L; ipadm show-addr; } > /dev/term/a 2>&1; echo NET_STATIC_ADDR_OK $L"
+# `ipadm create-addr` RETURNS 0 AND LEAVES THE INTERFACE UNCONFIGURED WHILE NWAM OWNS IT.
+#
+# MEASURED on run 45974122212 - the run whose serial gate PASSED and whose ssh still could not connect:
+#
+#	=== the address exists, as the serial log reports it
+#	  saw "NET_STATIC_ADDR_OK" (1m40s)          <- THE COMMAND RAN AND SAID IT WORKED
+#	=== wait for sshd
+#	  host diag [ip neigh]: 172.30.0.2 dev qemubr0 FAILED
+#	  host diag [icmp guest]: try1: timed out   <- AND THERE WAS NO ADDRESS
+#
+# SO THE COMMAND SUCCEEDED AND THE ADDRESS DID NOT EXIST. On illumos, `ipadm` refuses to manage an
+# interface that NWAM has claimed - and reports success anyway. NWAM is the default network manager
+# here, so every `ipadm create-addr` this stage has run has been a no-op with a zero exit status.
+#
+# THE FIX IS TO TAKE THE INTERFACE AWAY FROM NWAM FIRST, WHICH IS `netadm disable`:
+#
+#	netadm disable -p ncu -n $L      NWAM stops managing this link
+#	ipadm create-if $L               then ipadm can own it
+#	ipadm create-addr -T dhcp $L/v4  and give it an address
+#
+# EACH LINE PRINTS ITS OWN RESULT TO /dev/term/a, so the serial log says WHICH of them failed when the
+# next run does - not only that the whole thing did.
+step "take the interface from NWAM, then give it an address"
+  input text "L=$(dladm show-link -p -o link | head -1); { echo LINK=$L; netadm disable -p ncu -n $L 2>&1; ipadm create-if $L 2>&1; ipadm create-addr -T dhcp $L/v4 2>&1; ipadm show-addr 2>&1; } > /dev/term/a 2>&1; echo NET_STATIC_ADDR_OK $L"
   settle 3
 
 
