@@ -59,52 +59,58 @@ step "boot the published disk"
 #
 # SO NOTHING IS PRESSED HERE. The menu's own words are waited for, and the step after this one takes
 # row 2.
-# THE MENU IS PRESSED AT, REPEATEDLY, BECAUSE `spc` ONCE ARRIVES BEFORE THE MENU IS DRAWN.
+# THE MENU MUST BE SEEN BEFORE IT CAN BE SAID TO HAVE GONE, AND `without` SAID IT HAD GONE AT ONCE.
 #
-# MEASURED on run 45959110119 - the commit that added `spc`. Its own key log is:
+# MEASURED on run 45964435933 - the commit that made this a retry loop. Its own log:
 #
-#	=== pause the countdown and take row 2 in the same breath
-#	  key spc
+#	=== take row 2, retrying until the menu is gone
+#	  see menu: frame-000001 (1024x768)
 #	  typed 1 character(s)
 #	  key ret
+#	  see: 0 word(s):                                        <- THE SCREEN WAS STILL BLANK
+#	  [until]: __until__ = true (none of the excluded words are present)
+#	  repeat: satisfied after 1 attempt(s)                   <- satisfied by seeing NOTHING
 #
-# and the frame after it was a NORMAL BOOT: `OmniOS r151060 Version omnios-r151060-513bc64de92 64-bit`.
-# `boot:` returns as soon as qemu is up, which is BEFORE OmniOS has drawn its menu, so the three keys
-# went into a blank screen and the countdown took row 1 as if nothing had been sent.
+# `without: [Multi, User, Autoboot]` IS TRUE OF AN EMPTY SCREEN. The loop therefore left after its first
+# read - before OmniOS had drawn anything - and the countdown took row 1, which is why the frame that
+# followed was `OmniOS r151060 Version omnios-r151060-513bc64de92 64-bit`.
 #
-# THE RECORDING OF THE SAME DISK SHOWS HOW LONG THE WINDOW IS: at t=5s the footer reads
-# `Autoboot in 7 seconds. [Space] to pause`, so the menu is up and waiting for roughly ten seconds.
+# SO THE LOOP WAITS FOR THE MENU FIRST AND FOR ITS ABSENCE SECOND, in two steps rather than one:
 #
-# SO THE KEYS ARE REPEATED UNTIL THE MENU IS GONE, rather than sent once at an unknown moment:
+#	step 1  repeat until the words `Multi`, `User` ARE present - the menu has been drawn
+#	step 2  then press 2 and Return                                   - the countdown is paused by reading
+#	        nothing; the menu is up for about ten seconds, measured at t=5s as
+#	        `Autoboot in 7 seconds. [Space] to pause`
 #
-#	read the screen
-#	2, ret          row 2 is `Boot Single User`; a `2` typed before the menu arrives is harmless
-#	until the words "Boot"/"Multi"/"User" are absent
-#
-# ONCE THE MENU IS PAST, THE SAME KEYS ARE INERT: `2` and Return at the single-user shell produce a
-# line the shell rejects, which is why the gate after this one reads for a prompt rather than trusting
-# that nothing was typed.
-step "take row 2, retrying until the menu is gone"
+# STEP 2 IS A SINGLE PRESS BECAUSE STEP 1 ALREADY PROVED THE MENU IS THERE. Repeating a press at a menu
+# that has gone is what the previous commit did, and it typed `2` into a booting kernel.
+step "the menu has been drawn"
   repeat
     do
-      item "read the screen"
+      item
+        settle 2
+      item "read the console"
         read
           name menu
-      item "type the row number"
-        input text "2"
-        settle 1
-      item "take it"
-        input ret
-        settle 6
     until
-      bind gone
+      bind up
       source menu
       mode text
       rect [0, 0, 1024, 768]
       rect_at [1024, 768]
       scale 1
-      without [Multi, User, Autoboot]
-    max 25
+      words [[Multi, User], [Autoboot]]
+    max 40
+
+
+step "take row 2, now that it is on screen"
+  do
+    item "type the row number"
+      input text "2"
+      settle 2
+    item "take it"
+      input ret
+      settle 10
 
 
 step "the single-user shell is up"
