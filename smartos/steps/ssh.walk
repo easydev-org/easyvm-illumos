@@ -202,6 +202,48 @@ step "run it"
   settle 25
 
 
+# THE OUTPUT IS READ OFF THE SCREEN, BECAUSE A CONSOLE ECHOES TYPING AND NOT RESULTS.
+#
+# MEASURED on runs 45950879868 and 45954121202: the log shows `typed 246 character(s)` and then
+# `machine_ssh: ssh_ready="false" present=true` for fifteen minutes, and the host's own diagnosis says
+#
+#	host diag [icmp guest]: try1: timed out | ICMP_OK 1/2
+#	host diag [tap on dial]: connect: timed out
+#
+# so `present=true` WAS THE ARP CACHE, not the guest. NOTHING IN THE LOG SAID WHETHER `ipadm` WORKED.
+#
+# THE FIX IS TO MAKE THE ANSWER BE PRINTED WHERE THE LOG CAN SEE IT: the command's own output is
+# written to a file and then CAT'ed, and the step below reads the screen for the address line. A
+# failure then says WHAT the interface looked like instead of only that sshd never answered.
+step "put the network state on screen, where the log can read it"
+  input text "{ dladm show-link; echo ---IPADM---; ipadm show-addr; echo ---IFCONFIG---; ifconfig -a | head -30; } > /tmp/net.txt 2>&1; cat /tmp/net.txt"
+  settle 3
+
+
+step "run it"
+  input ret
+  settle 12
+
+
+step "read the network state the system printed"
+  repeat
+    do
+      item
+        settle 5
+      item "read the screen"
+        read
+          name net
+    until
+      bind up
+      source net
+      mode text
+      rect [0, 0, 1024, 768]
+      rect_at [1024, 768]
+      scale 1
+      words [[IPADM], [inet], [link]]
+    max 20
+
+
 step "wait for sshd"
   repeat
     until machine_ssh
